@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 // ═══════════════════════════════════════════════════════════════════════
 // CONFIG
@@ -671,7 +671,7 @@ export default function App() {
     const volComNovo = volAcum + aTotal;
     const veNovos = tresAcumNovos.length>0 ? calcVEconsol(tresAcumNovos, tals) : {};
     const veTot = Object.values(veNovos).reduce((s,v)=>s+v,0);
-    const pctNovo = veTot>0 ? Math.min((volComNovo/veTot)*100, 100) : 0;
+    // const pctNovo = veTot>0 ? Math.min((volComNovo/veTot)*100, 100) : 0;
     const desvio = veTot>0 ? ((volComNovo-veTot)/veTot)*100 : null;
     const rateio = aTotal>0 ? rateioVol(tals, aTotal) : {};
 
