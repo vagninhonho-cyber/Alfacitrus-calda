@@ -1252,7 +1252,6 @@ export default function App() {
                   Cada fazenda tem sua própria senha de acesso. Digite a nova senha de 4 dígitos no campo ao lado de cada fazenda.
                 </div>
                 {fazendas.map(faz=>{
-                  const [s,setS] = [fazSenhas[faz.id]||"", v=>setFazSenhas(p=>({...p,[faz.id]:v}))];
                   return (
                     <div key={faz.id} style={{padding:"10px 0",borderBottom:`1px solid ${C.bor2}`,display:"flex",alignItems:"center",gap:10}}>
                       <div style={{flex:1}}>
