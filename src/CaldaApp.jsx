@@ -12,6 +12,7 @@ let VAZAO_BICO_GLOBAL = 1.6;
 const sbGet  = async p => { const r=await fetch(`${SUPABASE_URL}/rest/v1/${p}`,{headers:H}); if(!r.ok) throw new Error(await r.text()); return r.json(); };
 const sbPost = async (t,b) => { const r=await fetch(`${SUPABASE_URL}/rest/v1/${t}`,{method:"POST",headers:{...H,"Prefer":"return=representation"},body:JSON.stringify(b)}); if(!r.ok) throw new Error(await r.text()); return r.json(); };
 const sbPatch= async (t,w,b) => { const r=await fetch(`${SUPABASE_URL}/rest/v1/${t}?${w}`,{method:"PATCH",headers:{...H,"Prefer":"return=representation"},body:JSON.stringify(b)}); if(!r.ok) throw new Error(await r.text()); return r.json(); };
+const sbDelete= async (t,w) => { const r=await fetch(`${SUPABASE_URL}/rest/v1/${t}?${w}`,{method:"DELETE",headers:H}); if(!r.ok) throw new Error(await r.text()); };
 
 // ═══════════════════════════════════════════════════════════════════════
 // CÁLCULOS
@@ -143,6 +144,10 @@ export default function App() {
 
   // Modal cancelar apontamento
   const [showCancelar,    setShowCancelar]    = useState(false);
+  const [showExcluirAp,   setShowExcluirAp]   = useState(false);
+  const [senhaExcluirIn,  setSenhaExcluirIn]  = useState("");
+  const [senhaExcluirErr, setSenhaExcluirErr] = useState(false);
+  const [apExcluirId,     setApExcluirId]     = useState(null);
   const [apontCancelar,   setApontCancelar]   = useState(null);
   const [motivoCancelamento, setMotivoCancelamento] = useState("");
 
@@ -415,6 +420,17 @@ export default function App() {
 
   const fecharAp  = async id => { setAplicacoes(p=>p.map(x=>x.id!==id?x:{...x,status:"fechada",dataFechamento:today()})); try{await sbPatch("aplicacoes",`id=eq.${id}`,{status:"fechada",data_fechamento:today()});}catch(e){} };
   const reabrirAp = async id => { setAplicacoes(p=>p.map(x=>x.id!==id?x:{...x,status:"aberta",dataFechamento:null})); try{await sbPatch("aplicacoes",`id=eq.${id}`,{status:"aberta",data_fechamento:null});}catch(e){} };
+  const excluirAplicacao = async () => {
+    if(senhaExcluirIn !== senhaConfig){ setSenhaExcluirErr(true); setSenhaExcluirIn(""); return; }
+    try {
+      await sbDelete("apontamentos", `id_aplicacao=eq.${apExcluirId}`);
+      await sbDelete("aplicacao_talhoes", `id_aplicacao=eq.${apExcluirId}`);
+      await sbDelete("aplicacoes", `id=eq.${apExcluirId}`);
+      setAplicacoes(p=>p.filter(x=>x.id!==apExcluirId));
+      setShowExcluirAp(false); setSenhaExcluirIn(""); setSenhaExcluirErr(false); setApExcluirId(null);
+      setTela("main");
+    } catch(e) { alert("Erro ao excluir: "+e.message); }
+  };
 
   const aTotal =aTre.reduce((s,t)=>s+fv(t.volume),0);
   const aFormOk=aOp&&aEq&&aTre.every(t=>t.velocidade&&t.bicos&&t.volume);
@@ -568,6 +584,30 @@ export default function App() {
         <div style={{display:"flex",gap:8}}>
           <button onClick={()=>setShowCancelar(false)} style={{...btnG(),flex:1,justifyContent:"center"}}>Voltar</button>
           <button onClick={cancelarApontamento} style={{flex:1,background:C.errBg,color:C.err,border:`1px solid ${C.err}33`,borderRadius:12,padding:"12px",fontSize:13,fontWeight:700,cursor:"pointer"}}>Cancelar apontamento</button>
+        </div>
+      </div>
+    </div>
+  ):null;
+
+  const ModalExcluirAp=()=>showExcluirAp?(
+    <div style={{position:"fixed",inset:0,background:"#000c",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:24}}>
+      <div style={{background:C.sur2,border:`1.5px solid ${C.err}44`,borderRadius:20,padding:24,width:"100%",maxWidth:320}}>
+        <div style={{fontSize:15,fontWeight:800,color:C.err,marginBottom:6}}>Excluir aplicação</div>
+        <div style={{fontSize:12,color:C.txD,marginBottom:16,lineHeight:1.6}}>
+          Esta ação é <b style={{color:C.err}}>irreversível</b>. A aplicação e todos os seus dados serão permanentemente removidos do banco de dados.
+        </div>
+        <span style={lbl()}>Senha de configuração</span>
+        <input
+          type="password"
+          value={senhaExcluirIn}
+          onChange={e=>{setSenhaExcluirIn(e.target.value);setSenhaExcluirErr(false);}}
+          placeholder="Digite a senha"
+          style={{...inp(),marginBottom:6,borderColor:senhaExcluirErr?C.err:C.bor}}
+        />
+        {senhaExcluirErr&&<div style={{fontSize:11,color:C.err,marginBottom:8}}>Senha incorreta</div>}
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <button onClick={()=>{setShowExcluirAp(false);setSenhaExcluirIn("");setSenhaExcluirErr(false);}} style={{...btnG(),flex:1,justifyContent:"center"}}>Cancelar</button>
+          <button onClick={excluirAplicacao} style={{flex:1,background:C.err,color:"#fff",border:"none",borderRadius:12,padding:"12px",fontSize:13,fontWeight:700,cursor:"pointer"}}>Excluir</button>
         </div>
       </div>
     </div>
@@ -1099,12 +1139,19 @@ export default function App() {
           {ap.status==="aberta"&&(<>
             <button onClick={()=>{setApSel(ap);setTela("apontamento");}} style={{...btnP(),marginBottom:8,background:cor}}>+ Novo apontamento</button>
             <button onClick={()=>fecharAp(ap.id)} style={{...btnG(),width:"100%",justifyContent:"center",borderColor:`${C.ok}44`,color:C.ok}}><ILock/> Marcar como concluído</button>
+            {ap.apontamentos.filter(r=>!r.cancelado).length===0&&(
+              <button onClick={()=>{setApExcluirId(ap.id);setSenhaExcluirIn("");setSenhaExcluirErr(false);setShowExcluirAp(true);}}
+                style={{...btnG(),width:"100%",justifyContent:"center",marginTop:6,borderColor:`${C.err}33`,color:C.err}}>
+                Excluir aplicação
+              </button>
+            )}
           </>)}
           {ap.status==="fechada"&&(
             <button onClick={()=>reabrirAp(ap.id)} style={{...btnG(),width:"100%",justifyContent:"center",borderColor:`${C.err}33`,color:C.err}}><IUnlock/> Reabrir aplicação</button>
           )}
         </div>
         <ModalCancelar/>
+        <ModalExcluirAp/>
       </div>
     );
   }
