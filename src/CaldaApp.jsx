@@ -594,8 +594,9 @@ export default function App() {
     <div style={{position:"fixed",inset:0,background:"#000c",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:24}}>
       <div style={{background:C.sur2,border:`1.5px solid ${C.err}44`,borderRadius:20,padding:24,width:"100%",maxWidth:320}}>
         <div style={{fontSize:15,fontWeight:800,color:C.err,marginBottom:6}}>Excluir aplicação</div>
-        <div style={{fontSize:12,color:C.txD,marginBottom:16,lineHeight:1.6}}>
-          Esta ação é <b style={{color:C.err}}>irreversível</b>. A aplicação e todos os seus dados serão permanentemente removidos do banco de dados.
+        <div style={{background:C.errBg,border:`1px solid ${C.err}33`,borderRadius:10,padding:"10px 12px",marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:900,color:C.err,marginBottom:3}}>{apExcluirId}</div>
+          <div style={{fontSize:11,color:C.txD,lineHeight:1.6}}>Esta ação é <b style={{color:C.err}}>irreversível</b>. A aplicação e todos os seus dados serão permanentemente removidos do banco.</div>
         </div>
         <div style={{textAlign:"center",marginBottom:10}}>
           <div style={{fontSize:11,color:C.txM,marginBottom:10}}>Digite a senha de configuração</div>
@@ -609,7 +610,6 @@ export default function App() {
                 if(senhaExcluirIn.length>=4)return;
                 const nova=senhaExcluirIn+String(n);
                 setSenhaExcluirIn(nova);setSenhaExcluirErr(false);
-                if(nova.length===4)excluirAplicacao(nova);
               }} style={{background:C.sur,border:`1px solid ${C.bor}`,borderRadius:11,padding:"13px 0",color:C.tx,fontSize:17,fontWeight:700,cursor:"pointer"}}>{n}</button>
             ))}
             <div/>
@@ -617,7 +617,6 @@ export default function App() {
               if(senhaExcluirIn.length>=4)return;
               const nova=senhaExcluirIn+"0";
               setSenhaExcluirIn(nova);setSenhaExcluirErr(false);
-              if(nova.length===4)excluirAplicacao(nova);
             }} style={{background:C.sur,border:`1px solid ${C.bor}`,borderRadius:11,padding:"13px 0",color:C.tx,fontSize:17,fontWeight:700,cursor:"pointer"}}>0</button>
             <button onClick={()=>{setSenhaExcluirIn(p=>p.slice(0,-1));setSenhaExcluirErr(false);}}
               style={{background:C.bg,border:`1px solid ${C.bor}`,borderRadius:11,padding:"13px 0",color:C.txD,cursor:"pointer"}}>←</button>
@@ -625,7 +624,7 @@ export default function App() {
         </div>
         <div style={{display:"flex",gap:8}}>
           <button onClick={()=>{setShowExcluirAp(false);setSenhaExcluirIn("");setSenhaExcluirErr(false);}} style={{...btnG(),flex:1,justifyContent:"center"}}>Cancelar</button>
-          <button onClick={excluirAplicacao} style={{flex:1,background:C.err,color:"#fff",border:"none",borderRadius:12,padding:"12px",fontSize:13,fontWeight:700,cursor:"pointer"}}>Excluir</button>
+          <button onClick={()=>excluirAplicacao()} style={{flex:1,background:senhaExcluirIn.length===4?C.err:`${C.err}55`,color:"#fff",border:"none",borderRadius:12,padding:"12px",fontSize:13,fontWeight:700,cursor:senhaExcluirIn.length===4?"pointer":"default"}}>Excluir</button>
         </div>
       </div>
     </div>
