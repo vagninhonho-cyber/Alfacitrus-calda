@@ -420,9 +420,8 @@ export default function App() {
 
   const fecharAp  = async id => { setAplicacoes(p=>p.map(x=>x.id!==id?x:{...x,status:"fechada",dataFechamento:today()})); try{await sbPatch("aplicacoes",`id=eq.${id}`,{status:"fechada",data_fechamento:today()});}catch(e){} };
   const reabrirAp = async id => { setAplicacoes(p=>p.map(x=>x.id!==id?x:{...x,status:"aberta",dataFechamento:null})); try{await sbPatch("aplicacoes",`id=eq.${id}`,{status:"aberta",data_fechamento:null});}catch(e){} };
-  const excluirAplicacao = async (senhaDigitada) => {
-    const s = senhaDigitada !== undefined ? senhaDigitada : senhaExcluirIn;
-    if(s !== senhaConfig){ setSenhaExcluirErr(true); setSenhaExcluirIn(""); return; }
+  const excluirAplicacao = async () => {
+    if(senhaExcluirIn !== senhaConfig){ setSenhaExcluirErr(true); setSenhaExcluirIn(""); return; }
     try {
       await sbDelete("apontamentos", `id_aplicacao=eq.${apExcluirId}`);
       await sbDelete("aplicacao_talhoes", `id_aplicacao=eq.${apExcluirId}`);
@@ -597,33 +596,16 @@ export default function App() {
         <div style={{fontSize:12,color:C.txD,marginBottom:16,lineHeight:1.6}}>
           Esta ação é <b style={{color:C.err}}>irreversível</b>. A aplicação e todos os seus dados serão permanentemente removidos do banco de dados.
         </div>
-        <div style={{textAlign:"center",marginBottom:10}}>
-          <div style={{fontSize:11,color:C.txM,marginBottom:10}}>Digite a senha de configuração</div>
-          <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:10}}>
-            {[0,1,2,3].map(i=><div key={i} style={{width:36,height:36,borderRadius:9,background:senhaExcluirIn.length>i?C.err:C.sur,border:senhaExcluirErr?`1.5px solid ${C.err}`:`1.5px solid ${C.bor}`}}/>)}
-          </div>
-          {senhaExcluirErr&&<div style={{color:C.err,fontSize:12,marginBottom:8}}>Senha incorreta</div>}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginBottom:10}}>
-            {[1,2,3,4,5,6,7,8,9].map(n=>(
-              <button key={n} onClick={()=>{
-                if(senhaExcluirIn.length>=4)return;
-                const nova=senhaExcluirIn+String(n);
-                setSenhaExcluirIn(nova);setSenhaExcluirErr(false);
-                if(nova.length===4)excluirAplicacao(nova);
-              }} style={{background:C.sur,border:`1px solid ${C.bor}`,borderRadius:11,padding:"13px 0",color:C.tx,fontSize:17,fontWeight:700,cursor:"pointer"}}>{n}</button>
-            ))}
-            <div/>
-            <button onClick={()=>{
-              if(senhaExcluirIn.length>=4)return;
-              const nova=senhaExcluirIn+"0";
-              setSenhaExcluirIn(nova);setSenhaExcluirErr(false);
-              if(nova.length===4)excluirAplicacao(nova);
-            }} style={{background:C.sur,border:`1px solid ${C.bor}`,borderRadius:11,padding:"13px 0",color:C.tx,fontSize:17,fontWeight:700,cursor:"pointer"}}>0</button>
-            <button onClick={()=>{setSenhaExcluirIn(p=>p.slice(0,-1));setSenhaExcluirErr(false);}}
-              style={{background:C.bg,border:`1px solid ${C.bor}`,borderRadius:11,padding:"13px 0",color:C.txD,cursor:"pointer"}}>←</button>
-          </div>
-        </div>
-        <div style={{display:"flex",gap:8}}>
+        <span style={lbl()}>Senha de configuração</span>
+        <input
+          type="password"
+          value={senhaExcluirIn}
+          onChange={e=>{setSenhaExcluirIn(e.target.value);setSenhaExcluirErr(false);}}
+          placeholder="Digite a senha"
+          style={{...inp(),marginBottom:6,borderColor:senhaExcluirErr?C.err:C.bor}}
+        />
+        {senhaExcluirErr&&<div style={{fontSize:11,color:C.err,marginBottom:8}}>Senha incorreta</div>}
+        <div style={{display:"flex",gap:8,marginTop:10}}>
           <button onClick={()=>{setShowExcluirAp(false);setSenhaExcluirIn("");setSenhaExcluirErr(false);}} style={{...btnG(),flex:1,justifyContent:"center"}}>Cancelar</button>
           <button onClick={excluirAplicacao} style={{flex:1,background:C.err,color:"#fff",border:"none",borderRadius:12,padding:"12px",fontSize:13,fontWeight:700,cursor:"pointer"}}>Excluir</button>
         </div>
