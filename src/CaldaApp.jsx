@@ -810,22 +810,33 @@ export default function App() {
         });
       });
 
-      import("https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs").then(XLSX=>{
+      const gerarArquivo = (XLSX) => {
         const ws = XLSX.utils.json_to_sheet(linhas);
         ws["!cols"] = Object.keys(linhas[0]||{}).map(()=>({wch:16}));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Aplicações");
         const nomeFaz = fazSel?.nome?.replace(/\s/g,"_")||subf;
         XLSX.writeFile(wb, `AlfaCitrus_${nomeFaz}_${subf}_${today()}.xlsx`);
-      }).catch(()=>{
-        const header = Object.keys(linhas[0]||{}).join(";");
-        const rows   = linhas.map(l=>Object.values(l).join(";")).join("\n");
-        const blob   = new Blob(["\uFEFF"+header+"\n"+rows],{type:"text/csv;charset=utf-8;"});
-        const url    = URL.createObjectURL(blob);
-        const a      = document.createElement("a");
-        a.href=url; a.download=`AlfaCitrus_${subf}_${today()}.csv`; a.click();
-        URL.revokeObjectURL(url);
-      });
+      };
+
+      if(window.XLSX){
+        gerarArquivo(window.XLSX);
+      } else {
+        const script = document.createElement("script");
+        script.src = "https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js";
+        script.onload = () => gerarArquivo(window.XLSX);
+        script.onerror = () => {
+          // fallback CSV
+          const header = Object.keys(linhas[0]||{}).join(";");
+          const rows   = linhas.map(l=>Object.values(l).join(";")).join("\n");
+          const blob   = new Blob(["\uFEFF"+header+"\n"+rows],{type:"text/csv;charset=utf-8;"});
+          const url    = URL.createObjectURL(blob);
+          const a      = document.createElement("a");
+          a.href=url; a.download=`AlfaCitrus_${subf}_${today()}.csv`; a.click();
+          URL.revokeObjectURL(url);
+        };
+        document.head.appendChild(script);
+      }
     };
 
     const TabAplicacoes=()=>{
