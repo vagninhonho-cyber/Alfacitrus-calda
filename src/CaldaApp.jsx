@@ -738,7 +738,6 @@ export default function App() {
       lista.forEach(ap => {
         const tals  = getTalhoesAp(ap);
         const apts  = ap.apontamentos.filter(r=>!r.cancelado);
-        const tres  = apts.flatMap(r=>r.trechos);
 
         // para cada talhão separado
         tals.forEach(tal => {
