@@ -731,10 +731,114 @@ export default function App() {
       </div>
     );
 
+    const exportarExcel = () => {
+      const lista = aplicacoes.filter(ap=>ap.fazenda===subf).sort((a,b)=>b.seq-a.seq);
+      const linhas = [];
+
+      lista.forEach(ap => {
+        const tals  = getTalhoesAp(ap);
+        const apts  = ap.apontamentos.filter(r=>!r.cancelado);
+        const tres  = apts.flatMap(r=>r.trechos);
+
+        // para cada talhão separado
+        tals.forEach(tal => {
+          const veTal  = apts.reduce((s,r)=>{ const m=calcVEconsol(r.trechos,[tal]); return s+(m[tal.cod]||0); },0);
+          const volTal = apts.reduce((s,r)=>s+(r.volRateado?.[tal.cod]||0),0);
+          const cobTal = veTal>0?Math.min((volTal/veTal)*100,100):0;
+          const desvTal= veTal>0?((volTal-veTal)/veTal)*100:null;
+
+          // linha RESUMO do talhão
+          linhas.push({
+            "ID Aplicação":             ap.id,
+            "Seq":                       ap.seq,
+            "Fazenda":                   fazSel?.nome||"",
+            "Subfazenda":                subf,
+            "Talhão":                    tal.quadra,
+            "Variedade":                 tal.variedade,
+            "Área (ha)":                 +tal.area.toFixed(2),
+            "Plantas":                   tal.plantas,
+            "Status":                    ap.status==="aberta"?"Aberta":"Concluída",
+            "Data criação":              ap.dataCriacao||"",
+            "Data fechamento":           ap.dataFechamento||"",
+            "Qtd apontamentos":          apts.length,
+            "Vol. realizado talhão (L)": +volTal.toFixed(0),
+            "VE esperado talhão (L)":    +veTal.toFixed(0),
+            "Cobertura talhão (%)":      +cobTal.toFixed(1),
+            "Desvio talhão (%)":         desvTal!==null?+desvTal.toFixed(2):"",
+            "Tipo":                      "RESUMO TALHÃO",
+            "Apto #":                    "",
+            "Data apontamento":          "",
+            "Operador":                  "",
+            "Equipamento":               "",
+            "Vol. apontamento talhão (L)":"",
+            "Vel. apontamento (km/h)":   "",
+            "Bicos apontamento":         "",
+            "Observação":                "",
+          });
+
+          // linhas APONTAMENTO — volume rateado para este talhão
+          apts.forEach((r,i) => {
+            const volAptTal = r.volRateado?.[tal.cod]||0;
+            linhas.push({
+              "ID Aplicação":              ap.id,
+              "Seq":                        ap.seq,
+              "Fazenda":                    fazSel?.nome||"",
+              "Subfazenda":                 subf,
+              "Talhão":                     tal.quadra,
+              "Variedade":                  tal.variedade,
+              "Área (ha)":                  +tal.area.toFixed(2),
+              "Plantas":                    tal.plantas,
+              "Status":                     ap.status==="aberta"?"Aberta":"Concluída",
+              "Data criação":               ap.dataCriacao||"",
+              "Data fechamento":            ap.dataFechamento||"",
+              "Qtd apontamentos":           apts.length,
+              "Vol. realizado talhão (L)":  +volTal.toFixed(0),
+              "VE esperado talhão (L)":     +veTal.toFixed(0),
+              "Cobertura talhão (%)":       +cobTal.toFixed(1),
+              "Desvio talhão (%)":          desvTal!==null?+desvTal.toFixed(2):"",
+              "Tipo":                       "APONTAMENTO",
+              "Apto #":                     i+1,
+              "Data apontamento":           r.data||"",
+              "Operador":                   r.operador||"",
+              "Equipamento":                r.equip||"",
+              "Vol. apontamento talhão (L)":+volAptTal.toFixed(0),
+              "Vel. apontamento (km/h)":    +r.velMedia.toFixed(2),
+              "Bicos apontamento":          +r.bicosMedia.toFixed(1),
+              "Observação":                 r.observacao||"",
+            });
+          });
+        });
+      });
+
+      import("https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs").then(XLSX=>{
+        const ws = XLSX.utils.json_to_sheet(linhas);
+        ws["!cols"] = Object.keys(linhas[0]||{}).map(()=>({wch:16}));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Aplicações");
+        const nomeFaz = fazSel?.nome?.replace(/\s/g,"_")||subf;
+        XLSX.writeFile(wb, `AlfaCitrus_${nomeFaz}_${subf}_${today()}.xlsx`);
+      }).catch(()=>{
+        const header = Object.keys(linhas[0]||{}).join(";");
+        const rows   = linhas.map(l=>Object.values(l).join(";")).join("\n");
+        const blob   = new Blob(["\uFEFF"+header+"\n"+rows],{type:"text/csv;charset=utf-8;"});
+        const url    = URL.createObjectURL(blob);
+        const a      = document.createElement("a");
+        a.href=url; a.download=`AlfaCitrus_${subf}_${today()}.csv`; a.click();
+        URL.revokeObjectURL(url);
+      });
+    };
+
     const TabAplicacoes=()=>{
       const lista=aplicacoes.filter(ap=>ap.fazenda===subf).sort((a,b)=>b.seq-a.seq);
       return (
         <div style={{padding:"12px 12px 88px"}}>
+          {lista.length>0&&(
+            <button onClick={exportarExcel}
+              style={{...btnG(),width:"100%",justifyContent:"center",marginBottom:10,color:C.ok,borderColor:`${C.ok}33`}}>
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Exportar Excel ({lista.length} aplicações)
+            </button>
+          )}
           {lista.length===0&&<div style={{...crd(),textAlign:"center",color:C.txD,fontSize:13}}>Nenhuma aplicação</div>}
           {lista.map((ap,idx)=>{
             const pct=pctCobertura(ap); const volR=ap.apontamentos.filter(r=>!r.cancelado).reduce((s,r)=>s+r.volTotal,0); const dev=desvioAp(ap);
