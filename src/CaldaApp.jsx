@@ -261,7 +261,7 @@ export default function App() {
       } catch(e){}
 
       // Aplicações
-      const aps = await sbGet(`aplicacoes?select=*&id_subfazenda=in.(${subfIds.join(",")})&order=seq.desc&limit=60`);
+      const aps = await sbGet(`aplicacoes?select=*&id_subfazenda=in.(${subfIds.join(",")})&order=seq.desc&limit=200`);
       const apsCompl = await Promise.all(aps.map(async ap => {
         const apT = await sbGet(`aplicacao_talhoes?select=cod_talhao&id_aplicacao=eq.${ap.id}`);
         const apts = await sbGet(`apontamentos?select=*&id_aplicacao=eq.${ap.id}&cancelado=eq.false&order=criado_em`);
