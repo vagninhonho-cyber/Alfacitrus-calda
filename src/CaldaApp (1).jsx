@@ -202,6 +202,12 @@ export default function App() {
   // Seletor de fazenda nas configurações (independente da fazenda de entrada)
   const [fazConfig, setFazConfig] = useState(null);
   const [talhoesCfg, setTalhoesCfg] = useState([]);
+  const [cfgEditTal,    setCfgEditTal]    = useState(null);
+  const [cfgEditTalQ,   setCfgEditTalQ]   = useState("");
+  const [cfgEditTalVar, setCfgEditTalVar] = useState("");
+  const [cfgEditTalPl,  setCfgEditTalPl]  = useState("");
+  const [cfgEditTalRua, setCfgEditTalRua] = useState("");
+  const [cfgEditTalPlE, setCfgEditTalPlE] = useState("");
   const [operadoresCfg, setOperadoresCfg] = useState([]);
   const [equipamentosCfg, setEquipamentosCfg] = useState([]);
   // Carrega dados de uma fazenda específica para a tela de config
@@ -699,13 +705,15 @@ export default function App() {
     if(!showEditarApt) return null;
     return (
       <div style={{position:"fixed",inset:0,background:"#000d",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200}}>
-        <div style={{background:C.sur2,border:`1.5px solid ${C.bor}`,borderRadius:"20px 20px 0 0",padding:20,width:"100%",maxWidth:480,maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{background:C.sur2,border:`1.5px solid ${C.bor}`,borderRadius:"20px 20px 0 0",padding:20,width:"100%",maxWidth:480,maxHeight:"90vh",overflowY:"auto",overflowX:"hidden",boxSizing:"border-box"}}>
           <div style={{fontSize:15,fontWeight:800,color:C.tx,marginBottom:16}}>Editar apontamento</div>
 
           {/* Data */}
           <span style={lbl()}>Data</span>
-          <input type="date" value={aptEditData} onChange={e=>setAptEditData(e.target.value)}
-            style={{...inp(),marginBottom:12}}/>
+          <div style={{width:"100%",overflow:"hidden"}}>
+            <input type="date" value={aptEditData} onChange={e=>setAptEditData(e.target.value)}
+              style={{...inp(),marginBottom:12,WebkitAppearance:"none",appearance:"none",width:"100%",boxSizing:"border-box"}}/>
+          </div>
 
           {/* Operador */}
           <span style={lbl()}>Operador</span>
@@ -1540,9 +1548,66 @@ export default function App() {
               <div style={crd()}>
                 <span style={lbl()}>Talhões cadastrados</span>
                 {sortTalhoes(talsCfg).map(t=>(
-                  <div key={t.cod} style={{padding:"7px 0",borderBottom:`1px solid ${C.bor2}`,display:"flex",justifyContent:"space-between"}}>
-                    <div><div style={{fontSize:12,fontWeight:700}}>{t.id_subfazenda} · Talhão {t.quadra}</div><div style={{fontSize:10,color:C.txM}}>{t.variedade} · {t.plantas.toLocaleString("pt-BR")} pl · {t.esp_rua}m × {t.esp_planta}m</div></div>
-                    <div style={{fontSize:11,color:C.txD,textAlign:"right"}}>{parseFloat(t.area).toFixed(2)} ha</div>
+                  <div key={t.cod} style={{padding:"7px 0",borderBottom:`1px solid ${C.bor2}`}}>
+                    {cfgEditTal?.cod===t.cod ? (
+                      <div>
+                        <span style={lbl()}>Editando talhão {t.id_subfazenda} · {t.cod}</span>
+                        <div style={{display:"flex",gap:8,marginBottom:8}}>
+                          <div style={{flex:1}}><span style={lbl()}>Quadra</span><input value={cfgEditTalQ} onChange={e=>setCfgEditTalQ(e.target.value)} style={inp()}/></div>
+                          <div style={{flex:2}}><span style={lbl()}>Variedade</span><input value={cfgEditTalVar} onChange={e=>setCfgEditTalVar(e.target.value)} style={inp()}/></div>
+                        </div>
+                        <div style={{display:"flex",gap:8,marginBottom:8}}>
+                          <div style={{flex:1}}><span style={lbl()}>Plantas</span><input type="number" value={cfgEditTalPl} onChange={e=>setCfgEditTalPl(e.target.value)} style={inp()}/></div>
+                          <div style={{flex:1}}><span style={lbl()}>Esp. rua (m)</span><input type="number" step="0.1" value={cfgEditTalRua} onChange={e=>setCfgEditTalRua(e.target.value)} style={inp()}/></div>
+                          <div style={{flex:1}}><span style={lbl()}>Esp. planta (m)</span><input type="number" step="0.1" value={cfgEditTalPlE} onChange={e=>setCfgEditTalPlE(e.target.value)} style={inp()}/></div>
+                        </div>
+                        {cfgEditTalPl&&cfgEditTalRua&&cfgEditTalPlE&&(
+                          <div style={{background:C.bg,borderRadius:8,padding:"7px 10px",marginBottom:8,fontSize:11,color:C.txD}}>
+                            Área calculada: <b style={{color:C.gr}}>{((fv(cfgEditTalRua)*fv(cfgEditTalPlE)*fv(cfgEditTalPl))/10000).toFixed(3)} ha</b>
+                          </div>
+                        )}
+                        <div style={{display:"flex",gap:8}}>
+                          <button onClick={async()=>{
+                            if(!cfgEditTalQ.trim()||!cfgEditTalVar.trim()||!cfgEditTalPl||!cfgEditTalRua||!cfgEditTalPlE) return;
+                            const area=(fv(cfgEditTalRua)*fv(cfgEditTalPlE)*fv(cfgEditTalPl))/10000;
+                            const upd={quadra:cfgEditTalQ.trim(),variedade:cfgEditTalVar.trim(),plantas:parseInt(cfgEditTalPl),esp_rua:fv(cfgEditTalRua),esp_planta:fv(cfgEditTalPlE),area};
+                            try{
+                              await sbPatch("talhoes",`cod=eq.${t.cod}`,upd);
+                              const updFn=x=>x.cod!==t.cod?x:{...x,...upd};
+                              setTalhoes(p=>p.map(updFn));
+                              setTalhoesCfg(p=>p.map(updFn));
+                              setCfgEditTal(null);
+                            }catch(e){alert("Erro: "+e.message);}
+                          }} style={{...btnP(),flex:1,padding:"10px"}}>Salvar</button>
+                          <button onClick={()=>setCfgEditTal(null)} style={{...btnG(),flex:1,justifyContent:"center"}}>Cancelar</button>
+                        </div>
+                      </div>
+                    ):(
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <div>
+                          <div style={{fontSize:12,fontWeight:700}}>{t.id_subfazenda} · Talhão {t.quadra}</div>
+                          <div style={{fontSize:10,color:C.txM}}>{t.variedade} · {t.plantas.toLocaleString("pt-BR")} pl · {t.esp_rua}m × {t.esp_planta}m · {parseFloat(t.area).toFixed(2)} ha</div>
+                        </div>
+                        <div style={{display:"flex",gap:10,flexShrink:0,marginLeft:8}}>
+                          <button onClick={()=>{
+                            setCfgEditTal(t);
+                            setCfgEditTalQ(t.quadra);
+                            setCfgEditTalVar(t.variedade);
+                            setCfgEditTalPl(String(t.plantas));
+                            setCfgEditTalRua(String(t.esp_rua));
+                            setCfgEditTalPlE(String(t.esp_planta));
+                          }} style={{background:"none",border:"none",color:C.gr,cursor:"pointer",fontSize:11,fontWeight:600}}>Editar</button>
+                          <button onClick={async()=>{
+                            if(!window.confirm(`Desativar talhão ${t.quadra}?`)) return;
+                            try{
+                              await sbPatch("talhoes",`cod=eq.${t.cod}`,{ativo:false});
+                              setTalhoes(p=>p.filter(x=>x.cod!==t.cod));
+                              setTalhoesCfg(p=>p.filter(x=>x.cod!==t.cod));
+                            }catch(e){alert("Erro: "+e.message);}
+                          }} style={{background:"none",border:"none",color:C.err,cursor:"pointer",fontSize:11,fontWeight:600}}>Desativar</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
