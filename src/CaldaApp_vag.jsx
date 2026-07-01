@@ -1573,10 +1573,10 @@ export default function App() {
                           <button onClick={async()=>{
                             if(!cfgEditTalQ.trim()||!cfgEditTalVar.trim()||!cfgEditTalPl||!cfgEditTalRua||!cfgEditTalPlE) return;
                             const area=(fv(cfgEditTalRua)*fv(cfgEditTalPlE)*fv(cfgEditTalPl))/10000;
-                            const upd={quadra:cfgEditTalQ.trim(),variedade:cfgEditTalVar.trim(),plantas:parseInt(cfgEditTalPl),esp_rua:fv(cfgEditTalRua),esp_planta:fv(cfgEditTalPlE)};
+                            const upd={quadra:cfgEditTalQ.trim(),variedade:cfgEditTalVar.trim(),plantas:parseInt(cfgEditTalPl),esp_rua:fv(cfgEditTalRua),esp_planta:fv(cfgEditTalPlE),area};
                             try{
                               await sbPatch("talhoes",`cod=eq.${t.cod}`,upd);
-                              const updFn=x=>x.cod!==t.cod?x:{...x,...upd,area};
+                              const updFn=x=>x.cod!==t.cod?x:{...x,...upd};
                               setTalhoes(p=>p.map(updFn));
                               setTalhoesCfg(p=>p.map(updFn));
                               setCfgEditTal(null);
