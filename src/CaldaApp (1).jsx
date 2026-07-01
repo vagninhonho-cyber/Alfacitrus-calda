@@ -1282,7 +1282,10 @@ export default function App() {
           )}
           <div style={crd()}>
             <span style={lbl()}>Data</span>
-            <input type="date" value={aData} onChange={e=>setAData(e.target.value)} style={{...inp(),marginBottom:9}}/>
+            <div style={{width:"100%",overflow:"hidden"}}>
+              <input type="date" value={aData} onChange={e=>setAData(e.target.value)}
+                style={{...inp(),marginBottom:9,maxWidth:"100%",minWidth:0,display:"block"}}/>
+            </div>
             <span style={lbl()}>Operador</span>
             <select value={aOp} onChange={e=>setAOp(e.target.value)} style={{...sel(),marginBottom:9}}>
               <option value="">Selecionar...</option>
