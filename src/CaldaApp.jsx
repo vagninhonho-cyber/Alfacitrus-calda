@@ -1282,9 +1282,9 @@ export default function App() {
           )}
           <div style={crd()}>
             <span style={lbl()}>Data</span>
-            <div style={{width:"100%",overflow:"hidden"}}>
+            <div style={{width:"100%",overflow:"hidden",borderRadius:10}}>
               <input type="date" value={aData} onChange={e=>setAData(e.target.value)}
-                style={{...inp(),marginBottom:9,maxWidth:"100%",minWidth:0,display:"block"}}/>
+                style={{...inp(),marginBottom:9,maxWidth:"100%",minWidth:0,display:"block",WebkitAppearance:"none",appearance:"none",boxSizing:"border-box"}}/>
             </div>
             <span style={lbl()}>Operador</span>
             <select value={aOp} onChange={e=>setAOp(e.target.value)} style={{...sel(),marginBottom:9}}>
