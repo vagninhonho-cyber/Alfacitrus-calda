@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 // ═══════════════════════════════════════════════════════════════════════
 // CONFIG SUPABASE
@@ -144,6 +144,13 @@ export default function App() {
 
   // Modal cancelar apontamento
   const [showCancelar,    setShowCancelar]    = useState(false);
+  const [showEditarApt,   setShowEditarApt]   = useState(false);
+  const [aptEditando,     setAptEditando]     = useState(null);
+  const [aptEditData,     setAptEditData]     = useState("");
+  const [aptEditOp,       setAptEditOp]       = useState("");
+  const [aptEditEq,       setAptEditEq]       = useState("");
+  const [aptEditObs,      setAptEditObs]      = useState("");
+  const [aptEditTrechos,  setAptEditTrechos]  = useState([]);
   const [showExcluirAp,   setShowExcluirAp]   = useState(false);
   const [senhaExcluirIn,  setSenhaExcluirIn]  = useState("");
   const [senhaExcluirErr, setSenhaExcluirErr] = useState(false);
@@ -170,7 +177,7 @@ export default function App() {
   const [secao,     setSecao]     = useState("menu");
   const [novaOp,    setNovaOp]    = useState("");
   const [novaOpMat, setNovaOpMat] = useState("");
-  const [editOp,    setEditOp]    = useState(null); // {id, nome, matricula} sendo editado
+  const [cfgEditOp,    setCfgEditOp]    = useState(null); // {id, nome, matricula} sendo editado
   const [editOpNome,setEditOpNome]= useState("");
   const [editOpMat, setEditOpMat] = useState("");
   const [novaEq,    setNovaEq]    = useState("");
@@ -420,6 +427,57 @@ export default function App() {
 
   const fecharAp  = async id => { setAplicacoes(p=>p.map(x=>x.id!==id?x:{...x,status:"fechada",dataFechamento:today()})); try{await sbPatch("aplicacoes",`id=eq.${id}`,{status:"fechada",data_fechamento:today()});}catch(e){} };
   const reabrirAp = async id => { setAplicacoes(p=>p.map(x=>x.id!==id?x:{...x,status:"aberta",dataFechamento:null})); try{await sbPatch("aplicacoes",`id=eq.${id}`,{status:"aberta",data_fechamento:null});}catch(e){} };
+
+  const abrirEdicaoApt = (apId, r) => {
+    setAptEditando({apId, rId:r.id});
+    setAptEditData(r.data||today());
+    setAptEditOp(r.operador||"");
+    setAptEditEq(r.equip||"");
+    setAptEditObs(r.observacao||"");
+    setAptEditTrechos(r.trechos.map(t=>({...t})));
+    setShowEditarApt(true);
+  };
+
+  const salvarEdicaoApt = async () => {
+    if(!aptEditando) return;
+    const {apId, rId} = aptEditando;
+    // recalcular volumes
+    const velP = aptEditTrechos.reduce((s,t)=>{const v=parseFloat(t.volume)||0;return s+v;},0);
+    const velM = velP>0 ? aptEditTrechos.reduce((s,t)=>s+(parseFloat(t.velocidade)||0)*(parseFloat(t.volume)||0),0)/velP : 0;
+    const bicM = velP>0 ? aptEditTrechos.reduce((s,t)=>s+(parseFloat(t.bicos)||0)*(parseFloat(t.volume)||0),0)/velP : 0;
+    const volT = aptEditTrechos.reduce((s,t)=>s+(parseFloat(t.volume)||0),0);
+    const opObj = operadores.find(o=>o.nome===aptEditOp);
+    const eqObj = equipamentos.find(e=>e.nome===aptEditEq);
+    // atualizar estado local
+    setAplicacoes(p=>p.map(ap=>ap.id!==apId?ap:{
+      ...ap,
+      apontamentos:ap.apontamentos.map(r=>r.id!==rId?r:{
+        ...r,
+        data:aptEditData, operador:aptEditOp, equip:aptEditEq,
+        observacao:aptEditObs, trechos:aptEditTrechos,
+        velMedia:velM, bicosMedia:bicM, volTotal:volT,
+      })
+    }));
+    setShowEditarApt(false); setAptEditando(null);
+    try {
+      await sbPatch("apontamentos", `id=eq.${rId}`, {
+        data:aptEditData,
+        id_operador:opObj?.id||null,
+        id_equipamento:eqObj?.id||null,
+        observacao:aptEditObs,
+        vel_media:velM, bicos_media:bicM, vol_total:volT,
+      });
+      // atualizar trechos
+      const tresExist = await sbGet(`trechos?select=id&id_apontamento=eq.${rId}&order=ordem`);
+      await Promise.all(tresExist.map(t=>sbDelete("trechos",`id=eq.${t.id}`)));
+      await Promise.all(aptEditTrechos.map((t,i)=>sbPost("trechos",{
+        id_apontamento:rId, ordem:i+1,
+        velocidade:parseFloat(t.velocidade)||0,
+        bicos:parseInt(t.bicos)||0,
+        volume:parseFloat(t.volume)||0,
+      })));
+    } catch(e){ console.error(e); }
+  };
   const excluirAplicacao = async (senhaDigitada) => {
     const s = senhaDigitada !== undefined ? senhaDigitada : senhaExcluirIn;
     if(s !== senhaConfig){ setSenhaExcluirErr(true); setSenhaExcluirIn(""); return; }
@@ -573,22 +631,29 @@ export default function App() {
   ):null;
 
   // Modal cancelar apontamento
-  const ModalCancelar=()=>showCancelar?(
+  const motivoRef = useRef("");
+
+  const ModalCancelar=()=>{
+    if(!showCancelar) return null;
+    return (
     <div style={{position:"fixed",inset:0,background:"#000c",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:24}}>
       <div style={{background:C.sur2,border:`1.5px solid ${C.err}44`,borderRadius:20,padding:24,width:"100%",maxWidth:320}}>
         <div style={{fontSize:15,fontWeight:800,color:C.err,marginBottom:8}}>Cancelar apontamento</div>
         <div style={{fontSize:12,color:C.txD,marginBottom:12}}>O apontamento será marcado como cancelado mas permanece no histórico para auditoria.</div>
         <span style={lbl()}>Motivo (opcional)</span>
-        <textarea value={motivoCancelamento} onChange={e=>setMotivoCancelamento(e.target.value)}
+        <textarea
+          defaultValue=""
+          ref={el=>{ if(el) motivoRef.current=el; }}
           placeholder="Ex: volume informado incorretamente"
           style={{...inp(),height:80,resize:"none",marginBottom:12}}/>
         <div style={{display:"flex",gap:8}}>
           <button onClick={()=>setShowCancelar(false)} style={{...btnG(),flex:1,justifyContent:"center"}}>Voltar</button>
-          <button onClick={cancelarApontamento} style={{flex:1,background:C.errBg,color:C.err,border:`1px solid ${C.err}33`,borderRadius:12,padding:"12px",fontSize:13,fontWeight:700,cursor:"pointer"}}>Cancelar apontamento</button>
+          <button onClick={()=>{ setMotivoCancelamento(motivoRef.current?.value||""); cancelarApontamento(); }} style={{flex:1,background:C.errBg,color:C.err,border:`1px solid ${C.err}33`,borderRadius:12,padding:"12px",fontSize:13,fontWeight:700,cursor:"pointer"}}>Cancelar apontamento</button>
         </div>
       </div>
     </div>
-  ):null;
+    );
+  };
 
   const ModalExcluirAp=()=>showExcluirAp?(
     <div style={{position:"fixed",inset:0,background:"#000c",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:24}}>
@@ -629,6 +694,93 @@ export default function App() {
       </div>
     </div>
   ):null;
+
+  const ModalEditarApt=()=>{
+    if(!showEditarApt) return null;
+    return (
+      <div style={{position:"fixed",inset:0,background:"#000d",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200}}>
+        <div style={{background:C.sur2,border:`1.5px solid ${C.bor}`,borderRadius:"20px 20px 0 0",padding:20,width:"100%",maxWidth:480,maxHeight:"90vh",overflowY:"auto"}}>
+          <div style={{fontSize:15,fontWeight:800,color:C.tx,marginBottom:16}}>Editar apontamento</div>
+
+          {/* Data */}
+          <span style={lbl()}>Data</span>
+          <input type="date" value={aptEditData} onChange={e=>setAptEditData(e.target.value)}
+            style={{...inp(),marginBottom:12}}/>
+
+          {/* Operador */}
+          <span style={lbl()}>Operador</span>
+          <select value={aptEditOp} onChange={e=>setAptEditOp(e.target.value)} style={{...inp(),marginBottom:12}}>
+            <option value="">Selecionar...</option>
+            {operadores.map(o=><option key={o.id} value={o.nome}>{o.nome}</option>)}
+          </select>
+
+          {/* Equipamento */}
+          <span style={lbl()}>Equipamento</span>
+          <select value={aptEditEq} onChange={e=>setAptEditEq(e.target.value)} style={{...inp(),marginBottom:12}}>
+            <option value="">Selecionar...</option>
+            {equipamentos.map(e=><option key={e.id} value={e.nome}>{e.nome}</option>)}
+          </select>
+
+          {/* Trechos */}
+          <span style={lbl()}>Trechos</span>
+          {aptEditTrechos.map((t,i)=>(
+            <div key={i} style={{background:C.sur,border:`1px solid ${C.bor}`,borderRadius:10,padding:10,marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <span style={{fontSize:11,fontWeight:700,color:C.txD}}>TRECHO {i+1}</span>
+                {aptEditTrechos.length>1&&(
+                  <button onClick={()=>setAptEditTrechos(p=>p.filter((_,j)=>j!==i))}
+                    style={{background:"none",border:"none",color:C.err,cursor:"pointer",fontSize:16}}>×</button>
+                )}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                <div>
+                  <span style={lbl()}>Vel. (km/h)</span>
+                  <input type="number" step="0.1" value={t.velocidade}
+                    onChange={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:e.target.value}))}
+                    style={{...inp(),padding:"7px 8px"}}/>
+                </div>
+                <div>
+                  <span style={lbl()}>Bicos</span>
+                  <input type="number" value={t.bicos}
+                    onChange={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,bicos:e.target.value}))}
+                    style={{...inp(),padding:"7px 8px"}}/>
+                </div>
+                <div>
+                  <span style={lbl()}>Volume (L)</span>
+                  <input type="number" value={t.volume}
+                    onChange={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,volume:e.target.value}))}
+                    style={{...inp(),padding:"7px 8px"}}/>
+                </div>
+              </div>
+            </div>
+          ))}
+          <button onClick={()=>setAptEditTrechos(p=>[...p,{velocidade:"",bicos:"",volume:""}])}
+            style={{...btnG(),width:"100%",justifyContent:"center",marginBottom:12,fontSize:12}}>
+            + Adicionar trecho
+          </button>
+
+          {/* Observação */}
+          <span style={lbl()}>Observação</span>
+          <textarea value={aptEditObs} onChange={e=>setAptEditObs(e.target.value)}
+            placeholder="Observação opcional..."
+            style={{...inp(),height:60,resize:"none",marginBottom:16}}/>
+
+          {/* Preview volume */}
+          {aptEditTrechos.some(t=>parseFloat(t.volume)>0)&&(
+            <div style={{background:C.sur,borderRadius:10,padding:"8px 12px",marginBottom:16,display:"flex",justifyContent:"space-between"}}>
+              <span style={{fontSize:11,color:C.txD}}>Volume total calculado</span>
+              <span style={{fontSize:13,fontWeight:700,color:C.gr}}>{fmtL(aptEditTrechos.reduce((s,t)=>s+(parseFloat(t.volume)||0),0))}</span>
+            </div>
+          )}
+
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>{setShowEditarApt(false);setAptEditando(null);}} style={{...btnG(),flex:1,justifyContent:"center"}}>Cancelar</button>
+            <button onClick={salvarEdicaoApt} style={{...btnP(),flex:1,justifyContent:"center"}}>Salvar</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // ════════════════════════════════════════════════════════════════════════
   // TELA: ENTRADA
@@ -1256,10 +1408,16 @@ export default function App() {
                   <div style={{textAlign:"right",display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
                     <div style={{fontSize:13,fontWeight:700,color:r.cancelado?C.txM:C.gr}}>{fmtL(r.volTotal)}</div>
                     {!r.cancelado&&ap.status==="aberta"&&(
-                      <button onClick={()=>{setApontCancelar({apId:ap.id,rId:r.id});setMotivoCancelamento("");setShowCancelar(true);}}
-                        style={{fontSize:10,background:"none",border:`1px solid ${C.err}44`,color:C.err,borderRadius:6,padding:"2px 8px",cursor:"pointer"}}>
-                        Cancelar
-                      </button>
+                      <div style={{display:"flex",gap:5}}>
+                        <button onClick={()=>abrirEdicaoApt(ap.id,r)}
+                          style={{fontSize:10,background:"none",border:`1px solid ${C.bl}44`,color:C.bl,borderRadius:6,padding:"2px 8px",cursor:"pointer"}}>
+                          Editar
+                        </button>
+                        <button onClick={()=>{setApontCancelar({apId:ap.id,rId:r.id});setMotivoCancelamento("");setShowCancelar(true);}}
+                          style={{fontSize:10,background:"none",border:`1px solid ${C.err}44`,color:C.err,borderRadius:6,padding:"2px 8px",cursor:"pointer"}}>
+                          Cancelar
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1283,6 +1441,7 @@ export default function App() {
         </div>
         <ModalCancelar/>
         <ModalExcluirAp/>
+        <ModalEditarApt/>
       </div>
     );
   }
@@ -1431,7 +1590,7 @@ export default function App() {
                 <span style={lbl()}>Operadores cadastrados</span>
                 {opsCfg.map(op=>(
                   <div key={op.id} style={{padding:"10px 0",borderBottom:`1px solid ${C.bor2}`}}>
-                    {editOp?.id===op.id ? (
+                    {cfgEditOp?.id===op.id ? (
                       <div>
                         <span style={lbl()}>Editar operador</span>
                         <input placeholder="Nome" value={editOpNome} onChange={e=>setEditOpNome(e.target.value)} style={{...inp(),marginBottom:8}}/>
@@ -1444,10 +1603,10 @@ export default function App() {
                               const upd=x=>x.id!==op.id?x:{...x,nome:editOpNome.trim(),matricula:editOpMat.trim()||null};
                               setOperadores(p=>p.map(upd));
                               setOperadoresCfg(p=>p.map(upd));
-                              setEditOp(null);
+                              setAptEditOp(null);
                             }catch(e){alert("Erro: "+e.message);}
                           }} style={{...btnP(),flex:1,padding:"10px"}}>Salvar</button>
-                          <button onClick={()=>setEditOp(null)} style={{...btnG(),flex:1,justifyContent:"center"}}>Cancelar</button>
+                          <button onClick={()=>setAptEditOp(null)} style={{...btnG(),flex:1,justifyContent:"center"}}>Cancelar</button>
                         </div>
                       </div>
                     ) : (
@@ -1457,7 +1616,7 @@ export default function App() {
                           {op.matricula&&<div style={{fontSize:10,color:C.txD}}>Matrícula: {op.matricula}</div>}
                         </div>
                         <div style={{display:"flex",gap:10}}>
-                          <button onClick={()=>{setEditOp(op);setEditOpNome(op.nome);setEditOpMat(op.matricula||"");}} style={{background:"none",border:"none",color:C.gr,cursor:"pointer",fontSize:11}}>Editar</button>
+                          <button onClick={()=>{setAptEditOp(op);setEditOpNome(op.nome);setEditOpMat(op.matricula||"");}} style={{background:"none",border:"none",color:C.gr,cursor:"pointer",fontSize:11}}>Editar</button>
                           <button onClick={async()=>{try{await sbPatch("operadores",`id=eq.${op.id}`,{ativo:false});setOperadores(p=>p.filter(x=>x.id!==op.id));setOperadoresCfg(p=>p.filter(x=>x.id!==op.id));}catch(e){alert("Erro: "+e.message);}}} style={{background:"none",border:"none",color:C.err,cursor:"pointer",fontSize:11}}>Remover</button>
                         </div>
                       </div>
