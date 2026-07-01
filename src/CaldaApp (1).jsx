@@ -1603,10 +1603,10 @@ export default function App() {
                               const upd=x=>x.id!==op.id?x:{...x,nome:editOpNome.trim(),matricula:editOpMat.trim()||null};
                               setOperadores(p=>p.map(upd));
                               setOperadoresCfg(p=>p.map(upd));
-                              setAptEditOp(null);
+                              setCfgEditOp(null);
                             }catch(e){alert("Erro: "+e.message);}
                           }} style={{...btnP(),flex:1,padding:"10px"}}>Salvar</button>
-                          <button onClick={()=>setAptEditOp(null)} style={{...btnG(),flex:1,justifyContent:"center"}}>Cancelar</button>
+                          <button onClick={()=>setCfgEditOp(null)} style={{...btnG(),flex:1,justifyContent:"center"}}>Cancelar</button>
                         </div>
                       </div>
                     ) : (
@@ -1616,7 +1616,7 @@ export default function App() {
                           {op.matricula&&<div style={{fontSize:10,color:C.txD}}>Matrícula: {op.matricula}</div>}
                         </div>
                         <div style={{display:"flex",gap:10}}>
-                          <button onClick={()=>{setAptEditOp(op);setEditOpNome(op.nome);setEditOpMat(op.matricula||"");}} style={{background:"none",border:"none",color:C.gr,cursor:"pointer",fontSize:11}}>Editar</button>
+                          <button onClick={()=>{setCfgEditOp(op);setEditOpNome(op.nome);setEditOpMat(op.matricula||"");}} style={{background:"none",border:"none",color:C.gr,cursor:"pointer",fontSize:11}}>Editar</button>
                           <button onClick={async()=>{try{await sbPatch("operadores",`id=eq.${op.id}`,{ativo:false});setOperadores(p=>p.filter(x=>x.id!==op.id));setOperadoresCfg(p=>p.filter(x=>x.id!==op.id));}catch(e){alert("Erro: "+e.message);}}} style={{background:"none",border:"none",color:C.err,cursor:"pointer",fontSize:11}}>Remover</button>
                         </div>
                       </div>
