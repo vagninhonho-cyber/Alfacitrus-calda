@@ -18,7 +18,7 @@ const sbDelete= async (t,w) => { const r=await fetch(`${SUPABASE_URL}/rest/v1/${
 // CÁLCULOS
 // ═══════════════════════════════════════════════════════════════════════
 const fv    = v => parseFloat(v)||0;
-const fmtL  = v => v>=1000?`${(v/1000).toFixed(1)}k L`:`${Math.round(v)} L`;
+const fmtL  = v => `${Math.round(v).toLocaleString("pt-BR")} L`;
 const fmtP  = v => `${v.toFixed(1)}%`;
 const today = () => new Date().toISOString().split("T")[0];
 
@@ -1121,7 +1121,6 @@ export default function App() {
     };
 
     const TabRelatorio=()=>{
-      const [filtroStatus,setFiltroStatus]=useState("concluidas"); // concluidas | todas
       const [filtroPeriodo,setFiltroPeriodo]=useState(30); // 5 | 15 | 30 | 90 | null(tudo)
 
       const dentroPeriodo = ap => {
@@ -1132,7 +1131,11 @@ export default function App() {
         return dias<=filtroPeriodo;
       };
 
-      const base = aplicacoes.filter(ap=>ap.fazenda===subf && (filtroStatus==="todas"||ap.status==="fechada") && dentroPeriodo(ap));
+      // Desvio só faz sentido em aplicações CONCLUÍDAS — uma aplicação aberta
+      // ainda não completou a cobertura esperada do talhão, então comparar
+      // volume parcial com volume total esperado gera desvios irreais.
+      const abertasPeriodo = aplicacoes.filter(ap=>ap.fazenda===subf && ap.status==="aberta" && dentroPeriodo(ap));
+      const base = aplicacoes.filter(ap=>ap.fazenda===subf && ap.status==="fechada" && dentroPeriodo(ap));
 
       // ── Desvio por talhão (agregado das aplicações no escopo) ──────────
       const desvMap={};
@@ -1172,6 +1175,11 @@ export default function App() {
       const desvioMedio=totalEsp>0?((totalReal-totalEsp)/totalEsp)*100:null;
       const talCritico=statsTal[0];
 
+      // Amostra mínima (L esperados) pra um operador/equipamento entrar na
+      // disputa de "crítico" — evita que 1 apontamento pequeno vire um
+      // percentual absurdo por ter denominador minúsculo.
+      const ESP_MINIMO_CRITICO=500;
+
       const agruparPor=chave=>{
         const m={};
         aptStats.forEach(a=>{
@@ -1183,7 +1191,7 @@ export default function App() {
       };
       const rkOperadores=agruparPor("operador").sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
       const rkEquipamentos=agruparPor("equip").sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
-      const opCritico=[...rkOperadores].filter(o=>o.devPct!==null).sort((a,b)=>Math.abs(b.devPct)-Math.abs(a.devPct))[0];
+      const opCritico=[...rkOperadores].filter(o=>o.devPct!==null&&o.esp>=ESP_MINIMO_CRITICO).sort((a,b)=>Math.abs(b.devPct)-Math.abs(a.devPct))[0];
 
       // ── Distribuição dos desvios (por talhão) ──────────────────────────
       const bins=[
@@ -1218,14 +1226,14 @@ export default function App() {
 
       return (
         <div style={{padding:"12px 12px 88px"}}>
-          <div style={{display:"flex",gap:6,marginBottom:8}}>
-            <ChipFaz active={filtroStatus==="concluidas"} onClick={()=>setFiltroStatus("concluidas")}>Concluídas</ChipFaz>
-            <ChipFaz active={filtroStatus==="todas"} onClick={()=>setFiltroStatus("todas")}>Todas</ChipFaz>
-          </div>
-          <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
             {[{l:"5 dias",v:5},{l:"15 dias",v:15},{l:"30 dias",v:30},{l:"90 dias",v:90},{l:"Tudo",v:null}].map(p=>(
               <ChipFaz key={p.l} active={filtroPeriodo===p.v} onClick={()=>setFiltroPeriodo(p.v)}>{p.l}</ChipFaz>
             ))}
+          </div>
+          <div style={{fontSize:10,color:C.txM,marginBottom:12}}>
+            Baseado em {base.length} aplicaç{base.length===1?"ão":"ões"} concluída{base.length===1?"":"s"} no período.
+            {abertasPeriodo.length>0&&` ${abertasPeriodo.length} em andamento não entra${abertasPeriodo.length===1?"":"m"} no cálculo de desvio.`}
           </div>
 
           {/* KPIs */}
