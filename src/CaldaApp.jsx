@@ -1142,9 +1142,18 @@ export default function App() {
 
       // ── Desvio por talhão (agregado das aplicações no escopo) ──────────
       const desvMap={};
+      // Sanidade: trecho com velocidade fora de uma faixa plausível de operação
+      // (ex: "0.4" digitado por engano no lugar de "4.0") infla ou zera o VEha
+      // esperado de forma irreal e distorce toda a soma. Esses trechos são
+      // ignorados no relatório — mas continuam intactos no cadastro/edição.
+      const VEL_MIN_PLAUSIVEL=1, VEL_MAX_PLAUSIVEL=15;
+      const trechoValido = t => { const v=fv(t.velocidade); return v>=VEL_MIN_PLAUSIVEL && v<=VEL_MAX_PLAUSIVEL; };
+      let trechosIgnorados=0;
+      const trechosOk = arr => arr.filter(t=>{ const ok=trechoValido(t); if(!ok) trechosIgnorados++; return ok; });
+
       base.forEach(ap=>{
         const tals=getTalhoesAp(ap);
-        const veMap=calcVEconsol(todosTrechos(ap),tals);
+        const veMap=calcVEconsol(trechosOk(todosTrechos(ap)),tals);
         ap.talhoes.forEach(cod=>{
           const t=getTal(cod); if(!t) return;
           const real=ap.apontamentos.filter(r=>!r.cancelado).reduce((s,r)=>s+(r.volRateado[cod]||0),0);
@@ -1165,7 +1174,9 @@ export default function App() {
       base.forEach(ap=>{
         const tals=getTalhoesAp(ap);
         ap.apontamentos.filter(r=>!r.cancelado).forEach(r=>{
-          const veMap=calcVEconsol(r.trechos,tals);
+          const trOk=trechosOk(r.trechos);
+          if(!trOk.length) return; // apontamento só tinha trechos inválidos — ignora
+          const veMap=calcVEconsol(trOk,tals);
           const esp=tals.reduce((s,t)=>s+(veMap[t.cod]||0),0);
           if(esp>0) aptStats.push({operador:r.operador||"—",equip:r.equip||"—",real:r.volTotal,esp,diff:r.volTotal-esp});
         });
@@ -1241,6 +1252,7 @@ export default function App() {
           <div style={{fontSize:10,color:C.txM,marginBottom:12}}>
             Baseado em {base.length} aplicaç{base.length===1?"ão":"ões"} no período.
             {abertasIgnoradas.length>0&&` ${abertasIgnoradas.length} em andamento (cobertura < ${COBERTURA_MINIMA_ABERTA}% ou fora do filtro) não entra${abertasIgnoradas.length===1?"":"m"} no cálculo.`}
+            {trechosIgnorados>0&&` ${trechosIgnorados} trecho${trechosIgnorados===1?"":"s"} com velocidade fora do plausível (${VEL_MIN_PLAUSIVEL}-${VEL_MAX_PLAUSIVEL} km/h) foi${trechosIgnorados===1?"":"ram"} ignorado${trechosIgnorados===1?"":"s"} — provável erro de digitação, confira no apontamento.`}
           </div>
 
           {/* KPIs */}
