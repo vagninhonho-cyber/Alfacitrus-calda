@@ -101,6 +101,7 @@ const ILock  =()=><Ico d="M19 11H5a2 2 0 00-2 2v7a2 2 0 002 2h14a2 2 0 002-2v-7a
 const IUnlock=()=><Ico d="M19 11H5a2 2 0 00-2 2v7a2 2 0 002 2h14a2 2 0 002-2v-7a2 2 0 00-2-2zM7 11V7a5 5 0 019.9-1"/>;
 const ISun   =()=><svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>;
 const IMoon  =()=><svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>;
+const IReport=()=><svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9l-6-6z"/><path d="M13 3v6h6"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="9" y1="17" x2="12" y2="17"/></svg>;
 
 // Cor da aplicação (1ª=amarelo, 2ª=azul)
 const corAp = idx => idx===0 ? C.warn : C.blue;
@@ -553,7 +554,7 @@ export default function App() {
 
   const NavBar=()=>(
     <nav style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:C.sur2,borderTop:`1px solid ${C.bor}`,display:"flex",padding:"8px 0 12px",zIndex:50}}>
-      {[{id:"talhoes",label:"TALHÕES",icon:<IGrid/>},{id:"aplicacoes",label:"APLICAÇÕES",icon:<IList/>},{id:"painel",label:"PAINEL",icon:<IChart/>}].map(n=>(
+      {[{id:"talhoes",label:"TALHÕES",icon:<IGrid/>},{id:"aplicacoes",label:"APLICAÇÕES",icon:<IList/>},{id:"painel",label:"PAINEL",icon:<IChart/>},{id:"relatorio",label:"RELATÓRIO",icon:<IReport/>}].map(n=>(
         <button key={n.id} onClick={()=>{setAba(n.id);setTela("main");}}
           style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,background:"none",border:"none",cursor:"pointer",color:aba===n.id?C.gr:C.txM,fontSize:9,fontWeight:700,letterSpacing:.3}}>
           {n.icon}<span>{n.label}</span>
@@ -1119,6 +1120,197 @@ export default function App() {
       );
     };
 
+    const TabRelatorio=()=>{
+      const [filtroStatus,setFiltroStatus]=useState("concluidas"); // concluidas | todas
+      const [filtroPeriodo,setFiltroPeriodo]=useState(30); // 5 | 15 | 30 | 90 | null(tudo)
+
+      const dentroPeriodo = ap => {
+        if(!filtroPeriodo) return true;
+        const dataRef = ap.dataFechamento||ap.dataCriacao;
+        if(!dataRef) return true;
+        const dias=(new Date(today())-new Date(dataRef))/86400000;
+        return dias<=filtroPeriodo;
+      };
+
+      const base = aplicacoes.filter(ap=>ap.fazenda===subf && (filtroStatus==="todas"||ap.status==="fechada") && dentroPeriodo(ap));
+
+      // ── Desvio por talhão (agregado das aplicações no escopo) ──────────
+      const desvMap={};
+      base.forEach(ap=>{
+        const tals=getTalhoesAp(ap);
+        const veMap=calcVEconsol(todosTrechos(ap),tals);
+        ap.talhoes.forEach(cod=>{
+          const t=getTal(cod); if(!t) return;
+          const real=ap.apontamentos.filter(r=>!r.cancelado).reduce((s,r)=>s+(r.volRateado[cod]||0),0);
+          const esp=veMap[cod]||0;
+          const dev=esp>0?((real-esp)/esp)*100:null;
+          if(!desvMap[cod]) desvMap[cod]={cod,q:t.quadra,var:t.variedade,devs:[],volReal:0,volEsp:0};
+          if(dev!==null) desvMap[cod].devs.push(dev);
+          desvMap[cod].volReal+=real; desvMap[cod].volEsp+=esp;
+        });
+      });
+      const statsTal=Object.values(desvMap)
+        .map(x=>({...x,devMed:x.devs.length?x.devs.reduce((a,b)=>a+b,0)/x.devs.length:null}))
+        .filter(x=>x.devMed!==null)
+        .sort((a,b)=>b.devMed-a.devMed);
+
+      // ── Desvio por apontamento (base pra operador/equipamento e volumes L) ──
+      const aptStats=[];
+      base.forEach(ap=>{
+        const tals=getTalhoesAp(ap);
+        ap.apontamentos.filter(r=>!r.cancelado).forEach(r=>{
+          const veMap=calcVEconsol(r.trechos,tals);
+          const esp=tals.reduce((s,t)=>s+(veMap[t.cod]||0),0);
+          if(esp>0) aptStats.push({operador:r.operador||"—",equip:r.equip||"—",real:r.volTotal,esp,diff:r.volTotal-esp});
+        });
+      });
+
+      const volExcedente=aptStats.filter(a=>a.diff>0).reduce((s,a)=>s+a.diff,0);
+      const volFaltante =aptStats.filter(a=>a.diff<0).reduce((s,a)=>s+a.diff,0);
+      const totalReal=aptStats.reduce((s,a)=>s+a.real,0);
+      const totalEsp =aptStats.reduce((s,a)=>s+a.esp,0);
+      const desvioMedio=totalEsp>0?((totalReal-totalEsp)/totalEsp)*100:null;
+      const talCritico=statsTal[0];
+
+      const agruparPor=chave=>{
+        const m={};
+        aptStats.forEach(a=>{
+          const k=a[chave];
+          if(!m[k]) m[k]={nome:k,diff:0,real:0,esp:0};
+          m[k].diff+=a.diff; m[k].real+=a.real; m[k].esp+=a.esp;
+        });
+        return Object.values(m).map(x=>({...x,devPct:x.esp>0?((x.real-x.esp)/x.esp)*100:null}));
+      };
+      const rkOperadores=agruparPor("operador").sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
+      const rkEquipamentos=agruparPor("equip").sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
+      const opCritico=[...rkOperadores].filter(o=>o.devPct!==null).sort((a,b)=>Math.abs(b.devPct)-Math.abs(a.devPct))[0];
+
+      // ── Distribuição dos desvios (por talhão) ──────────────────────────
+      const bins=[
+        {l:"< -10%",min:-Infinity,max:-10,cor:C.txM},
+        {l:"-10% a -5%",min:-10,max:-5,cor:C.txM},
+        {l:"-5% a -2%",min:-5,max:-2,cor:C.txM},
+        {l:"Dentro da meta (±2%)",min:-2,max:2,cor:C.ok},
+        {l:"2% a 5%",min:2,max:5,cor:C.warn},
+        {l:"5% a 10%",min:5,max:10,cor:C.err},
+        {l:"> 10%",min:10,max:Infinity,cor:C.err},
+      ].map(b=>({...b,n:statsTal.filter(t=>t.devMed>b.min&&t.devMed<=b.max).length}));
+      const maxBin=Math.max(1,...bins.map(b=>b.n));
+
+      const maxAbsDev=Math.max(5,...statsTal.map(t=>Math.abs(t.devMed)));
+      const maxAbsDiff=Math.max(1,...aptStats.map(a=>Math.abs(a.diff)));
+
+      const RankRow=({nome,diff})=>{
+        const pctBar=Math.min(Math.abs(diff)/maxAbsDiff*100,100);
+        const cor=diff>=0?C.err:C.ok;
+        return (
+          <div style={{padding:"6px 0",borderBottom:`1px solid ${C.bor2}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+              <span style={{fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:150}}>{nome}</span>
+              <span style={{fontWeight:800,color:cor}}>{diff>0?"+":""}{fmtL(diff)}</span>
+            </div>
+            <div style={{background:C.sur,borderRadius:4,height:5,overflow:"hidden"}}>
+              <div style={{width:`${pctBar}%`,height:"100%",background:cor,borderRadius:4}}/>
+            </div>
+          </div>
+        );
+      };
+
+      return (
+        <div style={{padding:"12px 12px 88px"}}>
+          <div style={{display:"flex",gap:6,marginBottom:8}}>
+            <ChipFaz active={filtroStatus==="concluidas"} onClick={()=>setFiltroStatus("concluidas")}>Concluídas</ChipFaz>
+            <ChipFaz active={filtroStatus==="todas"} onClick={()=>setFiltroStatus("todas")}>Todas</ChipFaz>
+          </div>
+          <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
+            {[{l:"5 dias",v:5},{l:"15 dias",v:15},{l:"30 dias",v:30},{l:"90 dias",v:90},{l:"Tudo",v:null}].map(p=>(
+              <ChipFaz key={p.l} active={filtroPeriodo===p.v} onClick={()=>setFiltroPeriodo(p.v)}>{p.l}</ChipFaz>
+            ))}
+          </div>
+
+          {/* KPIs */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:10}}>
+            <div style={{...crd(),textAlign:"center",padding:"10px 6px",marginBottom:0}}>
+              <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Volume excedente</div>
+              <div style={{fontSize:17,fontWeight:900,color:C.err}}>{fmtL(volExcedente)}</div>
+            </div>
+            <div style={{...crd(),textAlign:"center",padding:"10px 6px",marginBottom:0}}>
+              <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Volume faltante</div>
+              <div style={{fontSize:17,fontWeight:900,color:C.ok}}>{fmtL(volFaltante)}</div>
+            </div>
+            <div style={{...crd(),textAlign:"center",padding:"10px 6px",marginBottom:0}}>
+              <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Desvio médio</div>
+              <div style={{fontSize:17,fontWeight:900}}><Bdg v={desvioMedio}/></div>
+            </div>
+            <div style={{...crd(),textAlign:"center",padding:"10px 6px",marginBottom:0}}>
+              <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Talhão crítico</div>
+              <div style={{fontSize:14,fontWeight:900}}>{talCritico?`T-${talCritico.q}`:"—"}</div>
+              {talCritico&&<div style={{marginTop:2}}><Bdg v={talCritico.devMed}/></div>}
+            </div>
+          </div>
+          <div style={{...crd(),textAlign:"center",padding:"10px 6px",marginBottom:12}}>
+            <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Operador crítico</div>
+            <div style={{fontSize:14,fontWeight:900}}>{opCritico?opCritico.nome:"—"}</div>
+            {opCritico&&<div style={{marginTop:2}}><Bdg v={opCritico.devPct}/></div>}
+          </div>
+
+          {/* Desvio por talhão */}
+          <div style={crd()}>
+            <span style={lbl()}>Desvio (%) por talhão</span>
+            {statsTal.length===0&&<p style={{fontSize:12,color:C.txM}}>Sem dados no período/filtro selecionado.</p>}
+            {statsTal.map(t=>{
+              const abs=Math.abs(t.devMed);
+              const cor=abs<=2?C.ok:abs<=5?C.warn:C.err;
+              const pctBar=Math.min(abs/maxAbsDev*100,100);
+              return (
+                <div key={t.cod} style={{padding:"6px 0",borderBottom:`1px solid ${C.bor2}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                    <div><span style={{fontSize:12,fontWeight:800}}>T-{t.q}</span><span style={{fontSize:9,color:C.txM,marginLeft:5}}>{t.var}</span></div>
+                    <span style={{fontSize:11,fontWeight:800,color:cor}}>{t.devMed>0?"+":""}{t.devMed.toFixed(1)}%</span>
+                  </div>
+                  <div style={{background:C.sur,borderRadius:4,height:6,overflow:"hidden",display:"flex",justifyContent:t.devMed<0?"flex-end":"flex-start"}}>
+                    <div style={{width:`${pctBar}%`,height:"100%",background:cor,borderRadius:4}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Top operadores */}
+          <div style={{...crd(),marginTop:10}}>
+            <span style={lbl()}>Top operadores — por volume excedente (L)</span>
+            {rkOperadores.length===0&&<p style={{fontSize:12,color:C.txM}}>Sem dados.</p>}
+            {rkOperadores.slice(0,10).map(o=><RankRow key={o.nome} nome={o.nome} diff={o.diff} devPct={o.devPct}/>)}
+          </div>
+
+          {/* Top equipamentos */}
+          <div style={{...crd(),marginTop:10}}>
+            <span style={lbl()}>Top equipamentos — por volume excedente (L)</span>
+            {rkEquipamentos.length===0&&<p style={{fontSize:12,color:C.txM}}>Sem dados.</p>}
+            {rkEquipamentos.slice(0,10).map(e=><RankRow key={e.nome} nome={e.nome} diff={e.diff} devPct={e.devPct}/>)}
+          </div>
+
+          {/* Distribuição dos desvios */}
+          <div style={{...crd(),marginTop:10}}>
+            <span style={lbl()}>Distribuição dos desvios (%)</span>
+            <div style={{display:"flex",alignItems:"flex-end",gap:5,height:90,marginTop:8}}>
+              {bins.map(b=>(
+                <div key={b.l} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%"}}>
+                  <span style={{fontSize:10,fontWeight:800,marginBottom:2}}>{b.n}</span>
+                  <div style={{width:"100%",height:`${Math.max((b.n/maxBin)*100,b.n>0?6:2)}%`,background:b.cor,borderRadius:3}}/>
+                </div>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:5,marginTop:6}}>
+              {bins.map(b=>(
+                <div key={b.l} style={{flex:1,fontSize:7,color:C.txM,textAlign:"center",lineHeight:1.2}}>{b.l}</div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     return (
       <div style={AppStyle}>
         <Hdr titulo={fazSel?.nome||"AlfaCitrus"} sub="Controle de pulverização" onBack={()=>setTela("entrada")}
@@ -1126,6 +1318,7 @@ export default function App() {
         {aba==="talhoes"&&<TabTalhoes/>}
         {aba==="aplicacoes"&&<TabAplicacoes/>}
         {aba==="painel"&&<TabPainel/>}
+        {aba==="relatorio"&&<TabRelatorio/>}
         <NavBar/>
         <ModalAlertaAp/>
       </div>
