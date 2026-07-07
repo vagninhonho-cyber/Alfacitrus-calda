@@ -1249,6 +1249,23 @@ export default function App() {
         );
       };
 
+      // Faixas usadas NESTA tela (iguais ao gráfico de desvio por talhão):
+      // ≤2% dentro da meta, até 5% atenção, acima disso crítico. O Bdg
+      // compartilhado do app usa 5%/10% (contexto diferente), por isso não
+      // reaproveitamos ele aqui — evita rótulo "crítico" com cor/limite errado.
+      const faixaDesvio = v => {
+        if(v===null||v===undefined) return {label:"—",cor:C.txM,bg:"transparent"};
+        const a=Math.abs(v);
+        if(a<=2) return {label:"Dentro da meta",cor:C.ok,bg:C.okBg};
+        if(a<=5) return {label:"Atenção",cor:C.warn,bg:C.warnBg};
+        return {label:"Crítico",cor:C.err,bg:C.errBg};
+      };
+      const BdgRel = ({v}) => {
+        if(v===null||v===undefined) return <span style={{color:C.txM,fontSize:11}}>—</span>;
+        const f=faixaDesvio(v);
+        return <span style={{background:f.bg,color:f.cor,borderRadius:6,padding:"2px 7px",fontWeight:700,fontSize:12}}>{v>0?"+":""}{v.toFixed(1)}%</span>;
+      };
+
       return (
         <div style={{padding:"12px 12px 88px"}}>
           <div style={{display:"flex",gap:6,marginBottom:8}}>
@@ -1278,18 +1295,18 @@ export default function App() {
             </div>
             <div style={{...crd(),textAlign:"center",padding:"10px 6px",marginBottom:0}}>
               <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Desvio médio</div>
-              <div style={{fontSize:17,fontWeight:900}}><Bdg v={desvioMedio}/></div>
+              <div style={{fontSize:17,fontWeight:900}}><BdgRel v={desvioMedio}/></div>
             </div>
             <div style={{...crd(),textAlign:"center",padding:"10px 6px",marginBottom:0}}>
-              <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Talhão crítico</div>
+              <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>{talCritico?faixaDesvio(talCritico.devMed).label:"Talhão crítico"} — talhão</div>
               <div style={{fontSize:14,fontWeight:900}}>{talCritico?`T-${talCritico.q}`:"—"}</div>
-              {talCritico&&<div style={{marginTop:2}}><Bdg v={talCritico.devMed}/></div>}
+              {talCritico&&<div style={{marginTop:2}}><BdgRel v={talCritico.devMed}/></div>}
             </div>
           </div>
           <div style={{...crd(),textAlign:"center",padding:"10px 6px",marginBottom:12}}>
-            <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Operador crítico</div>
+            <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>{opCritico?faixaDesvio(opCritico.devPct).label:"Operador crítico"} — operador (maior desvio)</div>
             <div style={{fontSize:14,fontWeight:900}}>{opCritico?opCritico.nome:"—"}</div>
-            {opCritico&&<div style={{marginTop:2}}><Bdg v={opCritico.devPct}/></div>}
+            {opCritico&&<div style={{marginTop:2}}><BdgRel v={opCritico.devPct}/></div>}
           </div>
 
           {/* Desvio por talhão */}
