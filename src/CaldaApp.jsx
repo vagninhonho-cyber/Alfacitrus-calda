@@ -1140,8 +1140,9 @@ export default function App() {
       const abertasIgnoradas = todasPeriodo.filter(ap=>ap.status==="aberta" && (filtroStatus==="concluidas"||pctCobertura(ap)<COBERTURA_MINIMA_ABERTA));
       const base = todasPeriodo.filter(ap=>ap.status==="fechada" || (filtroStatus==="todas" && ap.status==="aberta" && pctCobertura(ap)>=COBERTURA_MINIMA_ABERTA));
 
-      // ── Desvio por talhão (agregado das aplicações no escopo) ──────────
+      // ── Desvio por talhão + por apontamento (um único loop por aplicação) ──
       const desvMap={};
+      const aptStats=[];
       // Sanidade: trecho com velocidade fora de uma faixa plausível de operação
       // (ex: "0.4" digitado por engano no lugar de "4.0") infla ou zera o VEha
       // esperado de forma irreal e distorce toda a soma. Esses trechos são
@@ -1153,7 +1154,11 @@ export default function App() {
 
       base.forEach(ap=>{
         const tals=getTalhoesAp(ap);
-        const veMap=calcVEconsol(trechosOk(todosTrechos(ap)),tals);
+        const trechosAp=trechosOk(todosTrechos(ap));
+        if(!trechosAp.length) return;
+        const veMap=calcVEconsol(trechosAp,tals);
+
+        // Desvio por talhão
         ap.talhoes.forEach(cod=>{
           const t=getTal(cod); if(!t) return;
           const real=ap.apontamentos.filter(r=>!r.cancelado).reduce((s,r)=>s+(r.volRateado[cod]||0),0);
@@ -1163,24 +1168,30 @@ export default function App() {
           if(dev!==null) desvMap[cod].devs.push(dev);
           desvMap[cod].volReal+=real; desvMap[cod].volEsp+=esp;
         });
+
+        // Desvio por apontamento (rateado — ver explicação abaixo)
+        // O desvio só existe no nível da APLICAÇÃO INTEIRA (real total vs esperado
+        // total do talhão — mesma lógica acima). Pra atribuir esse desvio a
+        // operadores/equipamentos, rateamos proporcionalmente entre os
+        // apontamentos pela participação de cada um no volume total realizado —
+        // nunca recalculando um "esperado" novo e cheio pra cada apontamento
+        // parcial (isso inflava a soma, pois cada passada parcial era comparada
+        // com o talhão inteiro).
+        const veTot=tals.reduce((s,t)=>s+(veMap[t.cod]||0),0);
+        const validos=ap.apontamentos.filter(r=>!r.cancelado);
+        const totalReal=validos.reduce((s,r)=>s+r.volTotal,0);
+        if(veTot<=0||totalReal<=0) return;
+        const diffAp=totalReal-veTot;
+        validos.forEach(r=>{
+          const share=r.volTotal/totalReal;
+          const diff=diffAp*share;
+          aptStats.push({operador:r.operador||"—",equip:r.equip||"—",real:r.volTotal,esp:r.volTotal-diff,diff});
+        });
       });
       const statsTal=Object.values(desvMap)
         .map(x=>({...x,devMed:x.devs.length?x.devs.reduce((a,b)=>a+b,0)/x.devs.length:null}))
         .filter(x=>x.devMed!==null)
         .sort((a,b)=>b.devMed-a.devMed);
-
-      // ── Desvio por apontamento (base pra operador/equipamento e volumes L) ──
-      const aptStats=[];
-      base.forEach(ap=>{
-        const tals=getTalhoesAp(ap);
-        ap.apontamentos.filter(r=>!r.cancelado).forEach(r=>{
-          const trOk=trechosOk(r.trechos);
-          if(!trOk.length) return; // apontamento só tinha trechos inválidos — ignora
-          const veMap=calcVEconsol(trOk,tals);
-          const esp=tals.reduce((s,t)=>s+(veMap[t.cod]||0),0);
-          if(esp>0) aptStats.push({operador:r.operador||"—",equip:r.equip||"—",real:r.volTotal,esp,diff:r.volTotal-esp});
-        });
-      });
 
       const volExcedente=aptStats.filter(a=>a.diff>0).reduce((s,a)=>s+a.diff,0);
       const volFaltante =aptStats.filter(a=>a.diff<0).reduce((s,a)=>s+a.diff,0);
