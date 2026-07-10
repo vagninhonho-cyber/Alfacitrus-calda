@@ -1121,9 +1121,8 @@ export default function App() {
     };
 
     const TabRelatorio=()=>{
-      const [filtroStatus,setFiltroStatus]=useState("concluidas"); // concluidas | todas
       const [filtroPeriodo,setFiltroPeriodo]=useState(30); // 5 | 15 | 30 | 90 | null(tudo)
-      const COBERTURA_MINIMA_ABERTA=50; // % — abaixo disso a aplicação aberta é recente demais pro desvio fazer sentido
+      const [mostrarLista,setMostrarLista]=useState(false);
 
       const dentroPeriodo = ap => {
         if(!filtroPeriodo) return true;
@@ -1133,12 +1132,12 @@ export default function App() {
         return dias<=filtroPeriodo;
       };
 
-      // Desvio só faz sentido comparando volume real com o TOTAL esperado do
-      // talhão. Uma aplicação aberta recém-iniciada ainda não chegou lá, então
-      // só entram no cálculo as abertas com cobertura >= COBERTURA_MINIMA_ABERTA.
+      // Desvio só faz sentido em aplicações CONCLUÍDAS — o total esperado só
+      // é comparável ao volume real quando a cobertura chegou a 100%. Por
+      // isso este relatório só considera aplicações fechadas, sempre.
       const todasPeriodo = aplicacoes.filter(ap=>ap.fazenda===subf && dentroPeriodo(ap));
-      const abertasIgnoradas = todasPeriodo.filter(ap=>ap.status==="aberta" && (filtroStatus==="concluidas"||pctCobertura(ap)<COBERTURA_MINIMA_ABERTA));
-      const base = todasPeriodo.filter(ap=>ap.status==="fechada" || (filtroStatus==="todas" && ap.status==="aberta" && pctCobertura(ap)>=COBERTURA_MINIMA_ABERTA));
+      const abertasIgnoradas = todasPeriodo.filter(ap=>ap.status==="aberta");
+      const base = todasPeriodo.filter(ap=>ap.status==="fechada");
 
       // ── Desvio por talhão + por apontamento (um único loop por aplicação) ──
       const desvMap={};
@@ -1268,19 +1267,35 @@ export default function App() {
 
       return (
         <div style={{padding:"12px 12px 88px"}}>
-          <div style={{display:"flex",gap:6,marginBottom:8}}>
-            <ChipFaz active={filtroStatus==="concluidas"} onClick={()=>setFiltroStatus("concluidas")}>Concluídas</ChipFaz>
-            <ChipFaz active={filtroStatus==="todas"} onClick={()=>setFiltroStatus("todas")}>Todas</ChipFaz>
+          <div style={{display:"flex",gap:6,marginBottom:8,alignItems:"center"}}>
+            <span style={{padding:"6px 14px",borderRadius:20,fontSize:12,fontWeight:700,background:C.gr,color:C.bg}}>Concluídas</span>
+            <span style={{fontSize:10,color:C.txM}}>(fixo — desvio só é confiável em aplicações fechadas)</span>
           </div>
           <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
             {[{l:"5 dias",v:5},{l:"15 dias",v:15},{l:"30 dias",v:30},{l:"90 dias",v:90},{l:"Tudo",v:null}].map(p=>(
               <ChipFaz key={p.l} active={filtroPeriodo===p.v} onClick={()=>setFiltroPeriodo(p.v)}>{p.l}</ChipFaz>
             ))}
           </div>
-          <div style={{fontSize:10,color:C.txM,marginBottom:12}}>
-            Baseado em {base.length} aplicaç{base.length===1?"ão":"ões"} no período.
-            {abertasIgnoradas.length>0&&` ${abertasIgnoradas.length} em andamento (cobertura < ${COBERTURA_MINIMA_ABERTA}% ou fora do filtro) não entra${abertasIgnoradas.length===1?"":"m"} no cálculo.`}
+          <div style={{fontSize:10,color:C.txM,marginBottom:6}}>
+            Baseado em {base.length} aplicaç{base.length===1?"ão":"ões"} concluída{base.length===1?"":"s"} no período.
+            {abertasIgnoradas.length>0&&` ${abertasIgnoradas.length} em andamento não entra${abertasIgnoradas.length===1?"":"m"} no cálculo.`}
             {trechosIgnorados>0&&` ${trechosIgnorados} trecho${trechosIgnorados===1?"":"s"} com velocidade fora do plausível (${VEL_MIN_PLAUSIVEL}-${VEL_MAX_PLAUSIVEL} km/h) foi${trechosIgnorados===1?"":"ram"} ignorado${trechosIgnorados===1?"":"s"} — provável erro de digitação, confira no apontamento.`}
+          </div>
+
+          {/* Lista de aplicações usadas no cálculo — pra conferência com Power BI/Supabase */}
+          <div style={{...crd(),marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
+                 onClick={()=>setMostrarLista(m=>!m)}>
+              <span style={lbl()}>Aplicações incluídas ({base.length}) {mostrarLista?"▲":"▼"}</span>
+            </div>
+            {mostrarLista&&(
+              <div style={{marginTop:8,display:"flex",flexWrap:"wrap",gap:5}}>
+                {base.length===0&&<span style={{fontSize:11,color:C.txM}}>Nenhuma aplicação concluída nesse período.</span>}
+                {[...base].sort((a,b)=>a.id.localeCompare(b.id)).map(ap=>(
+                  <span key={ap.id} style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:6,background:C.sur,border:`1px solid ${C.bor}`,color:C.tx}}>{ap.id}</span>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* KPIs */}
