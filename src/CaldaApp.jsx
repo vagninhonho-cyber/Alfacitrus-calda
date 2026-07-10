@@ -1127,6 +1127,51 @@ export default function App() {
     const TabRelatorio=()=>{
       const [filtroPeriodo,setFiltroPeriodo]=useState(30); // 5 | 15 | 30 | 90 | null(tudo)
       const [mostrarLista,setMostrarLista]=useState(false);
+      const LIMITE_RECALIBRAR=15; // % — só acima disso vira recomendação de recalibrar
+
+      // ── Calibração da semana (independente do filtro de período acima) ──
+      // Semana calendário passada: segunda a domingo anteriores a hoje.
+      const hoje=new Date(today());
+      const diaSemana=hoje.getDay(); // 0=domingo..6=sábado
+      const diffSegundaAtual=diaSemana===0?6:diaSemana-1;
+      const segundaAtual=new Date(hoje); segundaAtual.setDate(hoje.getDate()-diffSegundaAtual);
+      const domingoPassado=new Date(segundaAtual); domingoPassado.setDate(segundaAtual.getDate()-1);
+      const segundaPassada=new Date(domingoPassado); segundaPassada.setDate(domingoPassado.getDate()-6);
+      const fmtCurta=d=>`${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
+
+      const apsSemanaPassada = aplicacoes.filter(ap=>{
+        if(ap.fazenda!==subf||ap.status!=="fechada") return false;
+        const dataRef=ap.dataFechamento||ap.dataCriacao; if(!dataRef) return false;
+        const d=new Date(dataRef);
+        return d>=segundaPassada && d<=domingoPassado;
+      });
+      const trechoValidoCal = t => { const v=fv(t.velocidade); return v>=1 && v<=15; };
+      const equipSemana={};
+      apsSemanaPassada.forEach(ap=>{
+        const tals=getTalhoesAp(ap);
+        const trAp=todosTrechos(ap).filter(trechoValidoCal);
+        if(!trAp.length) return;
+        const veMap=calcVEconsol(trAp,tals);
+        const veTot=tals.reduce((s,t)=>s+(veMap[t.cod]||0),0);
+        const validos=ap.apontamentos.filter(r=>!r.cancelado);
+        const totalReal=validos.reduce((s,r)=>s+r.volTotal,0);
+        if(veTot<=0||totalReal<=0) return;
+        const diffAp=totalReal-veTot;
+        validos.forEach(r=>{
+          const share=r.volTotal/totalReal;
+          const diff=diffAp*share;
+          const k=r.equip||"—";
+          if(!equipSemana[k]) equipSemana[k]={nome:k,diff:0,real:0,esp:0,aps:new Set()};
+          equipSemana[k].diff+=diff; equipSemana[k].real+=r.volTotal; equipSemana[k].esp+=(r.volTotal-diff);
+          equipSemana[k].aps.add(ap.id);
+        });
+      });
+      const ESP_MINIMO_CAL=500;
+      const rkCalibracao=Object.values(equipSemana)
+        .filter(e=>e.esp>=ESP_MINIMO_CAL)
+        .map(e=>({...e,devPct:(e.diff/e.esp)*100,qtdAps:e.aps.size}))
+        .sort((a,b)=>Math.abs(b.devPct)-Math.abs(a.devPct));
+      const precisamRecalibrar=rkCalibracao.filter(e=>Math.abs(e.devPct)>LIMITE_RECALIBRAR);
 
       const dentroPeriodo = ap => {
         if(!filtroPeriodo) return true;
@@ -1271,10 +1316,36 @@ export default function App() {
 
       return (
         <div style={{padding:"12px 12px 88px"}}>
-          <div style={{display:"flex",gap:6,marginBottom:8,alignItems:"center"}}>
-            <span style={{padding:"6px 14px",borderRadius:20,fontSize:12,fontWeight:700,background:C.gr,color:C.bg}}>Concluídas</span>
-            <span style={{fontSize:10,color:C.txM}}>(fixo — desvio só é confiável em aplicações fechadas)</span>
+          {/* Calibração da semana — por equipamento, semana calendário passada */}
+          <div style={{...crd(),marginBottom:12}}>
+            <span style={lbl()}>Calibração da semana ({fmtCurta(segundaPassada)} a {fmtCurta(domingoPassado)})</span>
+            {rkCalibracao.length===0&&<p style={{fontSize:11,color:C.txM,marginTop:6}}>Sem aplicações concluídas com dados suficientes na semana passada.</p>}
+            {precisamRecalibrar.length>0&&(
+              <div style={{display:"flex",gap:9,alignItems:"flex-start",background:C.errBg,border:`1px solid ${C.err}55`,borderRadius:10,padding:"9px 11px",marginTop:8,marginBottom:8}}>
+                <span style={{fontSize:16,lineHeight:1,color:C.err}}>⚠</span>
+                <div>
+                  <div style={{fontSize:11,fontWeight:800,color:C.err}}>{precisamRecalibrar.length} equipamento{precisamRecalibrar.length===1?"":"s"} precisa{precisamRecalibrar.length===1?"":"m"} de calibração</div>
+                  <div style={{fontSize:9,color:C.txM,marginTop:2}}>Desvio acima de {LIMITE_RECALIBRAR}% na semana passada</div>
+                </div>
+              </div>
+            )}
+            {rkCalibracao.map(e=>{
+              const critico=Math.abs(e.devPct)>LIMITE_RECALIBRAR;
+              return (
+                <div key={e.nome} style={{padding:"9px 0",borderBottom:`1px solid ${C.bor2}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:800}}>{e.nome}</div>
+                      <div style={{fontSize:9,color:C.txM,marginTop:1}}>{e.qtdAps} aplicaç{e.qtdAps===1?"ão":"ões"} · {fmtL(e.real)}</div>
+                    </div>
+                    <BdgRel v={e.devPct}/>
+                  </div>
+                  {critico&&<div style={{marginTop:5,fontSize:9,color:C.err,fontWeight:700}}>Recalibrar antes da próxima aplicação</div>}
+                </div>
+              );
+            })}
           </div>
+
           <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
             {[{l:"5 dias",v:5},{l:"15 dias",v:15},{l:"30 dias",v:30},{l:"90 dias",v:90},{l:"Tudo",v:null}].map(p=>(
               <ChipFaz key={p.l} active={filtroPeriodo===p.v} onClick={()=>setFiltroPeriodo(p.v)}>{p.l}</ChipFaz>
