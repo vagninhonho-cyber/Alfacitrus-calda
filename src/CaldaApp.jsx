@@ -52,6 +52,8 @@ const TEMA_ESCURO = {
   warn:"#fbbf24",warnBg:"#1a1000",
   err:"#f87171",errBg:"#1a0606",
   ok:"#34d399",okBg:"#041208",
+  bom:"#5eead4",bomBg:"#04211d",
+  alerta:"#fb923c",alertaBg:"#1f1207",
   blue:"#60a5fa",blueBg:"#0a1a2a",
 };
 const TEMA_CLARO = {
@@ -61,6 +63,8 @@ const TEMA_CLARO = {
   warn:"#b45309",warnBg:"#fef3c7",
   err:"#dc2626",errBg:"#fee2e2",
   ok:"#15803d",okBg:"#dcfce7",
+  bom:"#0d9488",bomBg:"#ccfbf1",
+  alerta:"#c2410c",alertaBg:"#ffedd5",
   blue:"#2563eb",blueBg:"#dbeafe",
 };
 // C é mutável: aplicarTema troca todas as cores in-place
@@ -1197,7 +1201,7 @@ export default function App() {
       const totalReal=aptStats.reduce((s,a)=>s+a.real,0);
       const totalEsp =aptStats.reduce((s,a)=>s+a.esp,0);
       const desvioMedio=totalEsp>0?((totalReal-totalEsp)/totalEsp)*100:null;
-      const talCritico=statsTal[0];
+      const talCritico=statsTal.length?[...statsTal].sort((a,b)=>Math.abs(b.devMed)-Math.abs(a.devMed))[0]:null;
 
       // Amostra mínima (L esperados) pra um operador/equipamento entrar na
       // disputa de "crítico" — evita que 1 apontamento pequeno vire um
@@ -1248,15 +1252,15 @@ export default function App() {
         );
       };
 
-      // Faixas usadas NESTA tela (iguais ao gráfico de desvio por talhão):
-      // ≤2% dentro da meta, até 5% atenção, acima disso crítico. O Bdg
-      // compartilhado do app usa 5%/10% (contexto diferente), por isso não
-      // reaproveitamos ele aqui — evita rótulo "crítico" com cor/limite errado.
+      // Faixas usadas NESTA tela (sempre pelo módulo do desvio):
+      // ≤2% Ótimo · 2–5% Bom · 5–10% Normal · 10–15% Alerta · >15% Crítico
       const faixaDesvio = v => {
         if(v===null||v===undefined) return {label:"—",cor:C.txM,bg:"transparent"};
         const a=Math.abs(v);
-        if(a<=2) return {label:"Dentro da meta",cor:C.ok,bg:C.okBg};
-        if(a<=5) return {label:"Atenção",cor:C.warn,bg:C.warnBg};
+        if(a<=2) return {label:"Ótimo",cor:C.ok,bg:C.okBg};
+        if(a<=5) return {label:"Bom",cor:C.bom,bg:C.bomBg};
+        if(a<=10) return {label:"Normal",cor:C.warn,bg:C.warnBg};
+        if(a<=15) return {label:"Alerta",cor:C.alerta,bg:C.alertaBg};
         return {label:"Crítico",cor:C.err,bg:C.errBg};
       };
       const BdgRel = ({v}) => {
@@ -1330,7 +1334,7 @@ export default function App() {
             {statsTal.length===0&&<p style={{fontSize:12,color:C.txM}}>Sem dados no período/filtro selecionado.</p>}
             {statsTal.map(t=>{
               const abs=Math.abs(t.devMed);
-              const cor=abs<=2?C.ok:abs<=5?C.warn:C.err;
+              const cor=faixaDesvio(t.devMed).cor;
               const pctBar=Math.min(abs/maxAbsDev*100,100);
               return (
                 <div key={t.cod} style={{padding:"6px 0",borderBottom:`1px solid ${C.bor2}`}}>
