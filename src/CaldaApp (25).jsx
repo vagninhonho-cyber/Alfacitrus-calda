@@ -18,7 +18,7 @@ const sbDelete= async (t,w) => { const r=await fetch(`${SUPABASE_URL}/rest/v1/${
 // CÁLCULOS
 // ═══════════════════════════════════════════════════════════════════════
 const fv    = v => parseFloat(v)||0;
-const fmtL  = v => v>=1000?`${(v/1000).toFixed(1)}k L`:`${Math.round(v)} L`;
+const fmtL  = v => `${Math.round(v).toLocaleString("pt-BR")} L`;
 const fmtP  = v => `${v.toFixed(1)}%`;
 const today = () => new Date().toISOString().split("T")[0];
 
@@ -101,6 +101,7 @@ const ILock  =()=><Ico d="M19 11H5a2 2 0 00-2 2v7a2 2 0 002 2h14a2 2 0 002-2v-7a
 const IUnlock=()=><Ico d="M19 11H5a2 2 0 00-2 2v7a2 2 0 002 2h14a2 2 0 002-2v-7a2 2 0 00-2-2zM7 11V7a5 5 0 019.9-1"/>;
 const ISun   =()=><svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>;
 const IMoon  =()=><svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>;
+const IReport=()=><svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9l-6-6z"/><path d="M13 3v6h6"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="9" y1="17" x2="12" y2="17"/></svg>;
 
 // Cor da aplicação (1ª=amarelo, 2ª=azul)
 const corAp = idx => idx===0 ? C.warn : C.blue;
@@ -553,7 +554,7 @@ export default function App() {
 
   const NavBar=()=>(
     <nav style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:C.sur2,borderTop:`1px solid ${C.bor}`,display:"flex",padding:"8px 0 12px",zIndex:50}}>
-      {[{id:"talhoes",label:"TALHÕES",icon:<IGrid/>},{id:"aplicacoes",label:"APLICAÇÕES",icon:<IList/>},{id:"painel",label:"PAINEL",icon:<IChart/>}].map(n=>(
+      {[{id:"talhoes",label:"TALHÕES",icon:<IGrid/>},{id:"aplicacoes",label:"APLICAÇÕES",icon:<IList/>},{id:"painel",label:"PAINEL",icon:<IChart/>},{id:"relatorio",label:"RELATÓRIO",icon:<IReport/>}].map(n=>(
         <button key={n.id} onClick={()=>{setAba(n.id);setTela("main");}}
           style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,background:"none",border:"none",cursor:"pointer",color:aba===n.id?C.gr:C.txM,fontSize:9,fontWeight:700,letterSpacing:.3}}>
           {n.icon}<span>{n.label}</span>
@@ -1119,6 +1120,267 @@ export default function App() {
       );
     };
 
+    const TabRelatorio=()=>{
+      const [filtroPeriodo,setFiltroPeriodo]=useState(30); // 5 | 15 | 30 | 90 | null(tudo)
+      const [mostrarLista,setMostrarLista]=useState(false);
+
+      const dentroPeriodo = ap => {
+        if(!filtroPeriodo) return true;
+        const dataRef = ap.dataFechamento||ap.dataCriacao;
+        if(!dataRef) return true;
+        const dias=(new Date(today())-new Date(dataRef))/86400000;
+        return dias<=filtroPeriodo;
+      };
+
+      // Desvio só faz sentido em aplicações CONCLUÍDAS — o total esperado só
+      // é comparável ao volume real quando a cobertura chegou a 100%. Por
+      // isso este relatório só considera aplicações fechadas, sempre.
+      const todasPeriodo = aplicacoes.filter(ap=>ap.fazenda===subf && dentroPeriodo(ap));
+      const abertasIgnoradas = todasPeriodo.filter(ap=>ap.status==="aberta");
+      const base = todasPeriodo.filter(ap=>ap.status==="fechada");
+
+      // ── Desvio por talhão + por apontamento (um único loop por aplicação) ──
+      const desvMap={};
+      const aptStats=[];
+      // Sanidade: trecho com velocidade fora de uma faixa plausível de operação
+      // (ex: "0.4" digitado por engano no lugar de "4.0") infla ou zera o VEha
+      // esperado de forma irreal e distorce toda a soma. Esses trechos são
+      // ignorados no relatório — mas continuam intactos no cadastro/edição.
+      const VEL_MIN_PLAUSIVEL=1, VEL_MAX_PLAUSIVEL=15;
+      const trechoValido = t => { const v=fv(t.velocidade); return v>=VEL_MIN_PLAUSIVEL && v<=VEL_MAX_PLAUSIVEL; };
+      let trechosIgnorados=0;
+      const trechosOk = arr => arr.filter(t=>{ const ok=trechoValido(t); if(!ok) trechosIgnorados++; return ok; });
+
+      base.forEach(ap=>{
+        const tals=getTalhoesAp(ap);
+        const trechosAp=trechosOk(todosTrechos(ap));
+        if(!trechosAp.length) return;
+        const veMap=calcVEconsol(trechosAp,tals);
+
+        // Desvio por talhão
+        ap.talhoes.forEach(cod=>{
+          const t=getTal(cod); if(!t) return;
+          const real=ap.apontamentos.filter(r=>!r.cancelado).reduce((s,r)=>s+(r.volRateado[cod]||0),0);
+          const esp=veMap[cod]||0;
+          const dev=esp>0?((real-esp)/esp)*100:null;
+          if(!desvMap[cod]) desvMap[cod]={cod,q:t.quadra,var:t.variedade,devs:[],volReal:0,volEsp:0};
+          if(dev!==null) desvMap[cod].devs.push(dev);
+          desvMap[cod].volReal+=real; desvMap[cod].volEsp+=esp;
+        });
+
+        // Desvio por apontamento (rateado — ver explicação abaixo)
+        // O desvio só existe no nível da APLICAÇÃO INTEIRA (real total vs esperado
+        // total do talhão — mesma lógica acima). Pra atribuir esse desvio a
+        // operadores/equipamentos, rateamos proporcionalmente entre os
+        // apontamentos pela participação de cada um no volume total realizado —
+        // nunca recalculando um "esperado" novo e cheio pra cada apontamento
+        // parcial (isso inflava a soma, pois cada passada parcial era comparada
+        // com o talhão inteiro).
+        const veTot=tals.reduce((s,t)=>s+(veMap[t.cod]||0),0);
+        const validos=ap.apontamentos.filter(r=>!r.cancelado);
+        const totalReal=validos.reduce((s,r)=>s+r.volTotal,0);
+        if(veTot<=0||totalReal<=0) return;
+        const diffAp=totalReal-veTot;
+        validos.forEach(r=>{
+          const share=r.volTotal/totalReal;
+          const diff=diffAp*share;
+          aptStats.push({operador:r.operador||"—",equip:r.equip||"—",real:r.volTotal,esp:r.volTotal-diff,diff});
+        });
+      });
+      const statsTal=Object.values(desvMap)
+        .map(x=>({...x,devMed:x.devs.length?x.devs.reduce((a,b)=>a+b,0)/x.devs.length:null}))
+        .filter(x=>x.devMed!==null)
+        .sort((a,b)=>b.devMed-a.devMed);
+
+      const volExcedente=aptStats.filter(a=>a.diff>0).reduce((s,a)=>s+a.diff,0);
+      const volFaltante =aptStats.filter(a=>a.diff<0).reduce((s,a)=>s+a.diff,0);
+      const totalReal=aptStats.reduce((s,a)=>s+a.real,0);
+      const totalEsp =aptStats.reduce((s,a)=>s+a.esp,0);
+      const desvioMedio=totalEsp>0?((totalReal-totalEsp)/totalEsp)*100:null;
+      const talCritico=statsTal[0];
+
+      // Amostra mínima (L esperados) pra um operador/equipamento entrar na
+      // disputa de "crítico" — evita que 1 apontamento pequeno vire um
+      // percentual absurdo por ter denominador minúsculo.
+      const ESP_MINIMO_CRITICO=500;
+
+      const agruparPor=chave=>{
+        const m={};
+        aptStats.forEach(a=>{
+          const k=a[chave];
+          if(!m[k]) m[k]={nome:k,diff:0,real:0,esp:0};
+          m[k].diff+=a.diff; m[k].real+=a.real; m[k].esp+=a.esp;
+        });
+        return Object.values(m).map(x=>({...x,devPct:x.esp>0?((x.real-x.esp)/x.esp)*100:null}));
+      };
+      const rkOperadores=agruparPor("operador").sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
+      const rkEquipamentos=agruparPor("equip").sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
+      const opCritico=[...rkOperadores].filter(o=>o.devPct!==null&&o.esp>=ESP_MINIMO_CRITICO).sort((a,b)=>Math.abs(b.devPct)-Math.abs(a.devPct))[0];
+
+      // ── Distribuição dos desvios (por talhão) ──────────────────────────
+      const bins=[
+        {l:"< -10%",min:-Infinity,max:-10,cor:C.txM},
+        {l:"-10% a -5%",min:-10,max:-5,cor:C.txM},
+        {l:"-5% a -2%",min:-5,max:-2,cor:C.txM},
+        {l:"Dentro da meta (±2%)",min:-2,max:2,cor:C.ok},
+        {l:"2% a 5%",min:2,max:5,cor:C.warn},
+        {l:"5% a 10%",min:5,max:10,cor:C.err},
+        {l:"> 10%",min:10,max:Infinity,cor:C.err},
+      ].map(b=>({...b,n:statsTal.filter(t=>t.devMed>b.min&&t.devMed<=b.max).length}));
+      const maxBin=Math.max(1,...bins.map(b=>b.n));
+
+      const maxAbsDev=Math.max(5,...statsTal.map(t=>Math.abs(t.devMed)));
+      const maxAbsDiff=Math.max(1,...aptStats.map(a=>Math.abs(a.diff)));
+
+      const RankRow=({nome,diff})=>{
+        const pctBar=Math.min(Math.abs(diff)/maxAbsDiff*100,100);
+        const cor=diff>=0?C.err:C.ok;
+        return (
+          <div style={{padding:"6px 0",borderBottom:`1px solid ${C.bor2}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+              <span style={{fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:150}}>{nome}</span>
+              <span style={{fontWeight:800,color:cor}}>{diff>0?"+":""}{fmtL(diff)}</span>
+            </div>
+            <div style={{background:C.sur,borderRadius:4,height:5,overflow:"hidden"}}>
+              <div style={{width:`${pctBar}%`,height:"100%",background:cor,borderRadius:4}}/>
+            </div>
+          </div>
+        );
+      };
+
+      // Faixas usadas NESTA tela (iguais ao gráfico de desvio por talhão):
+      // ≤2% dentro da meta, até 5% atenção, acima disso crítico. O Bdg
+      // compartilhado do app usa 5%/10% (contexto diferente), por isso não
+      // reaproveitamos ele aqui — evita rótulo "crítico" com cor/limite errado.
+      const faixaDesvio = v => {
+        if(v===null||v===undefined) return {label:"—",cor:C.txM,bg:"transparent"};
+        const a=Math.abs(v);
+        if(a<=2) return {label:"Dentro da meta",cor:C.ok,bg:C.okBg};
+        if(a<=5) return {label:"Atenção",cor:C.warn,bg:C.warnBg};
+        return {label:"Crítico",cor:C.err,bg:C.errBg};
+      };
+      const BdgRel = ({v}) => {
+        if(v===null||v===undefined) return <span style={{color:C.txM,fontSize:11}}>—</span>;
+        const f=faixaDesvio(v);
+        return <span style={{background:f.bg,color:f.cor,borderRadius:6,padding:"2px 7px",fontWeight:700,fontSize:12}}>{v>0?"+":""}{v.toFixed(1)}%</span>;
+      };
+
+      return (
+        <div style={{padding:"12px 12px 88px"}}>
+          <div style={{display:"flex",gap:6,marginBottom:8,alignItems:"center"}}>
+            <span style={{padding:"6px 14px",borderRadius:20,fontSize:12,fontWeight:700,background:C.gr,color:C.bg}}>Concluídas</span>
+            <span style={{fontSize:10,color:C.txM}}>(fixo — desvio só é confiável em aplicações fechadas)</span>
+          </div>
+          <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+            {[{l:"5 dias",v:5},{l:"15 dias",v:15},{l:"30 dias",v:30},{l:"90 dias",v:90},{l:"Tudo",v:null}].map(p=>(
+              <ChipFaz key={p.l} active={filtroPeriodo===p.v} onClick={()=>setFiltroPeriodo(p.v)}>{p.l}</ChipFaz>
+            ))}
+          </div>
+          <div style={{fontSize:10,color:C.txM,marginBottom:6}}>
+            Baseado em {base.length} aplicaç{base.length===1?"ão":"ões"} concluída{base.length===1?"":"s"} no período.
+            {abertasIgnoradas.length>0&&` ${abertasIgnoradas.length} em andamento não entra${abertasIgnoradas.length===1?"":"m"} no cálculo.`}
+            {trechosIgnorados>0&&` ${trechosIgnorados} trecho${trechosIgnorados===1?"":"s"} com velocidade fora do plausível (${VEL_MIN_PLAUSIVEL}-${VEL_MAX_PLAUSIVEL} km/h) foi${trechosIgnorados===1?"":"ram"} ignorado${trechosIgnorados===1?"":"s"} — provável erro de digitação, confira no apontamento.`}
+          </div>
+
+          {/* Lista de aplicações usadas no cálculo — pra conferência com Power BI/Supabase */}
+          <div style={{...crd(),marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
+                 onClick={()=>setMostrarLista(m=>!m)}>
+              <span style={lbl()}>Aplicações incluídas ({base.length}) {mostrarLista?"▲":"▼"}</span>
+            </div>
+            {mostrarLista&&(
+              <div style={{marginTop:8,display:"flex",flexWrap:"wrap",gap:5}}>
+                {base.length===0&&<span style={{fontSize:11,color:C.txM}}>Nenhuma aplicação concluída nesse período.</span>}
+                {[...base].sort((a,b)=>a.id.localeCompare(b.id)).map(ap=>(
+                  <span key={ap.id} style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:6,background:C.sur,border:`1px solid ${C.bor}`,color:C.tx}}>{ap.id}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* KPIs */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:10}}>
+            <div style={{...crd(),textAlign:"center",padding:"10px 6px",marginBottom:0}}>
+              <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Volume excedente</div>
+              <div style={{fontSize:17,fontWeight:900,color:C.err}}>{fmtL(volExcedente)}</div>
+            </div>
+            <div style={{...crd(),textAlign:"center",padding:"10px 6px",marginBottom:0}}>
+              <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Volume faltante</div>
+              <div style={{fontSize:17,fontWeight:900,color:C.ok}}>{fmtL(volFaltante)}</div>
+            </div>
+            <div style={{...crd(),textAlign:"center",padding:"10px 6px",marginBottom:0}}>
+              <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>Desvio médio</div>
+              <div style={{fontSize:17,fontWeight:900}}><BdgRel v={desvioMedio}/></div>
+            </div>
+            <div style={{...crd(),textAlign:"center",padding:"10px 6px",marginBottom:0}}>
+              <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>{talCritico?faixaDesvio(talCritico.devMed).label:"Talhão crítico"} — talhão</div>
+              <div style={{fontSize:14,fontWeight:900}}>{talCritico?`T-${talCritico.q}`:"—"}</div>
+              {talCritico&&<div style={{marginTop:2}}><BdgRel v={talCritico.devMed}/></div>}
+            </div>
+          </div>
+          <div style={{...crd(),textAlign:"center",padding:"10px 6px",marginBottom:12}}>
+            <div style={{fontSize:9,color:C.txM,textTransform:"uppercase",fontWeight:700,marginBottom:3}}>{opCritico?faixaDesvio(opCritico.devPct).label:"Operador crítico"} — operador (maior desvio)</div>
+            <div style={{fontSize:14,fontWeight:900}}>{opCritico?opCritico.nome:"—"}</div>
+            {opCritico&&<div style={{marginTop:2}}><BdgRel v={opCritico.devPct}/></div>}
+          </div>
+
+          {/* Desvio por talhão */}
+          <div style={crd()}>
+            <span style={lbl()}>Desvio (%) por talhão</span>
+            {statsTal.length===0&&<p style={{fontSize:12,color:C.txM}}>Sem dados no período/filtro selecionado.</p>}
+            {statsTal.map(t=>{
+              const abs=Math.abs(t.devMed);
+              const cor=abs<=2?C.ok:abs<=5?C.warn:C.err;
+              const pctBar=Math.min(abs/maxAbsDev*100,100);
+              return (
+                <div key={t.cod} style={{padding:"6px 0",borderBottom:`1px solid ${C.bor2}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                    <div><span style={{fontSize:12,fontWeight:800}}>T-{t.q}</span><span style={{fontSize:9,color:C.txM,marginLeft:5}}>{t.var}</span></div>
+                    <span style={{fontSize:11,fontWeight:800,color:cor}}>{t.devMed>0?"+":""}{t.devMed.toFixed(1)}%</span>
+                  </div>
+                  <div style={{background:C.sur,borderRadius:4,height:6,overflow:"hidden",display:"flex",justifyContent:t.devMed<0?"flex-end":"flex-start"}}>
+                    <div style={{width:`${pctBar}%`,height:"100%",background:cor,borderRadius:4}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Top operadores */}
+          <div style={{...crd(),marginTop:10}}>
+            <span style={lbl()}>Top operadores — por volume excedente (L)</span>
+            {rkOperadores.length===0&&<p style={{fontSize:12,color:C.txM}}>Sem dados.</p>}
+            {rkOperadores.slice(0,10).map(o=><RankRow key={o.nome} nome={o.nome} diff={o.diff} devPct={o.devPct}/>)}
+          </div>
+
+          {/* Top equipamentos */}
+          <div style={{...crd(),marginTop:10}}>
+            <span style={lbl()}>Top equipamentos — por volume excedente (L)</span>
+            {rkEquipamentos.length===0&&<p style={{fontSize:12,color:C.txM}}>Sem dados.</p>}
+            {rkEquipamentos.slice(0,10).map(e=><RankRow key={e.nome} nome={e.nome} diff={e.diff} devPct={e.devPct}/>)}
+          </div>
+
+          {/* Distribuição dos desvios */}
+          <div style={{...crd(),marginTop:10}}>
+            <span style={lbl()}>Distribuição dos desvios (%)</span>
+            <div style={{display:"flex",alignItems:"flex-end",gap:5,height:90,marginTop:8}}>
+              {bins.map(b=>(
+                <div key={b.l} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%"}}>
+                  <span style={{fontSize:10,fontWeight:800,marginBottom:2}}>{b.n}</span>
+                  <div style={{width:"100%",height:`${Math.max((b.n/maxBin)*100,b.n>0?6:2)}%`,background:b.cor,borderRadius:3}}/>
+                </div>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:5,marginTop:6}}>
+              {bins.map(b=>(
+                <div key={b.l} style={{flex:1,fontSize:7,color:C.txM,textAlign:"center",lineHeight:1.2}}>{b.l}</div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     return (
       <div style={AppStyle}>
         <Hdr titulo={fazSel?.nome||"AlfaCitrus"} sub="Controle de pulverização" onBack={()=>setTela("entrada")}
@@ -1126,6 +1388,7 @@ export default function App() {
         {aba==="talhoes"&&<TabTalhoes/>}
         {aba==="aplicacoes"&&<TabAplicacoes/>}
         {aba==="painel"&&<TabPainel/>}
+        {aba==="relatorio"&&<TabRelatorio/>}
         <NavBar/>
         <ModalAlertaAp/>
       </div>
