@@ -79,6 +79,26 @@ const btnG= () => ({background:"transparent",color:C.gr,border:`1px solid ${C.bo
 const crd = () => ({background:C.sur2,border:`1px solid ${C.bor}`,borderRadius:14,padding:"12px 14px",marginBottom:10});
 const lbl = () => ({fontSize:10,fontWeight:700,color:C.txD,textTransform:"uppercase",letterSpacing:.8,marginBottom:4,display:"block"});
 
+// Campo numérico com separador de milhar em tempo real (ex: 20000 -> 20.000).
+// Componente definido no nível do módulo (não recriado a cada render do app)
+// para que digitar não force remontagem — mantém o teclado aberto e o foco.
+// Só sincroniza pro estado externo no blur (onCommit), igual ao padrão já
+// usado no resto do formulário de apontamento.
+const NumInputMilhar = ({defaultValue,onCommit,placeholder,style}) => {
+  const formatar = v => {
+    const raw = String(v??"").replace(/\D/g,"");
+    if(!raw) return "";
+    return parseInt(raw,10).toLocaleString("pt-BR");
+  };
+  const [texto,setTexto] = useState(()=>formatar(defaultValue));
+  return (
+    <input type="text" inputMode="numeric" placeholder={placeholder} style={style}
+      value={texto}
+      onChange={e=>setTexto(formatar(e.target.value))}
+      onBlur={()=>onCommit(texto.replace(/\D/g,""))}/>
+  );
+};
+
 const Bar = ({pct,h=6,cor}) => {
   const c=cor||(pct>=100?C.ok:pct>=65?C.gr:pct>=35?C.warn:C.err);
   return <div style={{background:C.sur,borderRadius:4,height:h,overflow:"hidden",flex:1}}>
@@ -452,21 +472,25 @@ export default function App() {
   const salvarEdicaoApt = async () => {
     if(!aptEditando) return;
     const {apId, rId} = aptEditando;
+    const ap = aplicacoes.find(x=>x.id===apId);
+    const tals = ap ? getTalhoesAp(ap) : [];
     // recalcular volumes
     const velP = aptEditTrechos.reduce((s,t)=>{const v=parseFloat(t.volume)||0;return s+v;},0);
     const velM = velP>0 ? aptEditTrechos.reduce((s,t)=>s+(parseFloat(t.velocidade)||0)*(parseFloat(t.volume)||0),0)/velP : 0;
     const bicM = velP>0 ? aptEditTrechos.reduce((s,t)=>s+(parseFloat(t.bicos)||0)*(parseFloat(t.volume)||0),0)/velP : 0;
     const volT = aptEditTrechos.reduce((s,t)=>s+(parseFloat(t.volume)||0),0);
+    const novoVolRateado = rateioVol(tals, volT);
     const opObj = operadores.find(o=>o.nome===aptEditOp);
     const eqObj = equipamentos.find(e=>e.nome===aptEditEq);
-    // atualizar estado local
-    setAplicacoes(p=>p.map(ap=>ap.id!==apId?ap:{
-      ...ap,
-      apontamentos:ap.apontamentos.map(r=>r.id!==rId?r:{
+    // atualizar estado local — inclui volRateado recalculado, senão o card
+    // "Volume por Talhão" continua mostrando o rateio antigo (desatualizado)
+    setAplicacoes(p=>p.map(x=>x.id!==apId?x:{
+      ...x,
+      apontamentos:x.apontamentos.map(r=>r.id!==rId?r:{
         ...r,
         data:aptEditData, operador:aptEditOp, equip:aptEditEq,
         observacao:aptEditObs, trechos:aptEditTrechos,
-        velMedia:velM, bicosMedia:bicM, volTotal:volT,
+        velMedia:velM, bicosMedia:bicM, volTotal:volT, volRateado:novoVolRateado,
       })
     }));
     setShowEditarApt(false); setAptEditando(null);
@@ -487,6 +511,20 @@ export default function App() {
         bicos:parseInt(t.bicos)||0,
         volume:parseFloat(t.volume)||0,
       })));
+      // atualizar rateio por talhão (apontamento_talhao_volume) — mesmo
+      // princípio da criação: recalcula o esperado consolidado usando os
+      // trechos de TODOS os outros apontamentos da aplicação + os novos
+      // trechos deste apontamento editado
+      if(ap && tals.length){
+        const outrosTrechos = ap.apontamentos.filter(r=>r.id!==rId && !r.cancelado).flatMap(r=>r.trechos);
+        const veMap = calcVEconsol([...outrosTrechos, ...aptEditTrechos], tals);
+        const volsExist = await sbGet(`apontamento_talhao_volume?select=id&id_apontamento=eq.${rId}`);
+        await Promise.all(volsExist.map(v=>sbDelete("apontamento_talhao_volume",`id=eq.${v.id}`)));
+        await Promise.all(ap.talhoes.map(cod=>sbPost("apontamento_talhao_volume",{
+          id_apontamento:rId, cod_talhao:cod,
+          vol_rateado:novoVolRateado[cod]||0, ve_consolidado:veMap[cod]||0,
+        })));
+      }
     } catch(e){ console.error(e); }
   };
   const excluirAplicacao = async (senhaDigitada) => {
@@ -737,7 +775,7 @@ export default function App() {
           {/* Trechos */}
           <span style={lbl()}>Trechos</span>
           {aptEditTrechos.map((t,i)=>(
-            <div key={i} style={{background:C.sur,border:`1px solid ${C.bor}`,borderRadius:10,padding:10,marginBottom:8}}>
+            <div key={`${i}_${aptEditTrechos.length}`} style={{background:C.sur,border:`1px solid ${C.bor}`,borderRadius:10,padding:10,marginBottom:8}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                 <span style={{fontSize:11,fontWeight:700,color:C.txD}}>TRECHO {i+1}</span>
                 {aptEditTrechos.length>1&&(
@@ -748,20 +786,20 @@ export default function App() {
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
                 <div>
                   <span style={lbl()}>Vel. (km/h)</span>
-                  <input type="number" step="0.1" value={t.velocidade}
-                    onChange={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:e.target.value}))}
+                  <input type="number" step="0.1" defaultValue={t.velocidade}
+                    onBlur={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:e.target.value}))}
                     style={{...inp(),padding:"7px 8px"}}/>
                 </div>
                 <div>
                   <span style={lbl()}>Bicos</span>
-                  <input type="number" value={t.bicos}
-                    onChange={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,bicos:e.target.value}))}
+                  <input type="number" defaultValue={t.bicos}
+                    onBlur={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,bicos:e.target.value}))}
                     style={{...inp(),padding:"7px 8px"}}/>
                 </div>
                 <div>
                   <span style={lbl()}>Volume (L)</span>
-                  <input type="number" value={t.volume}
-                    onChange={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,volume:e.target.value}))}
+                  <NumInputMilhar defaultValue={t.volume}
+                    onCommit={val=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,volume:val}))}
                     style={{...inp(),padding:"7px 8px"}}/>
                 </div>
               </div>
@@ -774,7 +812,7 @@ export default function App() {
 
           {/* Observação */}
           <span style={lbl()}>Observação</span>
-          <textarea value={aptEditObs} onChange={e=>setAptEditObs(e.target.value)}
+          <textarea defaultValue={aptEditObs} onBlur={e=>setAptEditObs(e.target.value)}
             placeholder="Observação opcional..."
             style={{...inp(),height:60,resize:"none",marginBottom:16}}/>
 
@@ -1641,14 +1679,14 @@ export default function App() {
               <button onClick={addTre} style={{background:`${C.gr}15`,border:`1px solid ${C.gr}30`,color:C.gr,borderRadius:7,padding:"3px 9px",fontSize:11,cursor:"pointer"}}>+ trecho</button>
             </div>
             {aTre.map((t,i)=>(
-              <div key={i} style={{background:C.sur,borderRadius:10,padding:10,marginBottom:7,position:"relative"}}>
+              <div key={`${i}_${aTre.length}`} style={{background:C.sur,borderRadius:10,padding:10,marginBottom:7,position:"relative"}}>
                 <div style={{fontSize:9,color:C.txM,fontWeight:700,marginBottom:6}}>TRECHO {i+1}</div>
                 <div style={{display:"flex",gap:7,marginBottom:7}}>
                   <div style={{flex:1}}><div style={{fontSize:9,color:C.txD,marginBottom:3}}>VEL. KM/H</div><input type="number" step="0.1" placeholder="4.2" value={t.velocidade} onChange={e=>updTre(i,"velocidade",e.target.value)} style={inp()}/></div>
                   <div style={{flex:1}}><div style={{fontSize:9,color:C.txD,marginBottom:3}}>BICOS</div><input type="number" placeholder="60" value={t.bicos} onChange={e=>updTre(i,"bicos",e.target.value)} style={inp()}/></div>
                 </div>
                 <div style={{fontSize:9,color:C.txD,marginBottom:3}}>VOLUME (L)</div>
-                <input type="number" placeholder="28000" value={t.volume} onChange={e=>updTre(i,"volume",e.target.value)} style={inp()}/>
+                <NumInputMilhar placeholder="28.000" defaultValue={t.volume} onCommit={val=>updTre(i,"volume",val)} style={inp()}/>
                 {aTre.length>1&&<button onClick={()=>rmTre(i)} style={{position:"absolute",top:8,right:8,background:"none",border:"none",color:C.err,cursor:"pointer",fontSize:16}}>×</button>}
               </div>
             ))}
