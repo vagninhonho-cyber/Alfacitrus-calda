@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 // ═══════════════════════════════════════════════════════════════════════
 // CONFIG SUPABASE
@@ -158,6 +158,10 @@ const bgCorAp = idx => idx===0 ? C.warnBg : C.blueBg;
 // ════════════════════════════════════════════════════════════════════════════
 export default function App() {
   const [tela,    setTela]    = useState("entrada");
+  // Ao trocar de tela, garante que a rolagem volte pro topo — sem isso, se a
+  // tela anterior ficou rolada (ex: teclado fechando ao salvar), o cabeçalho
+  // (com o botão de voltar) fica escondido acima da área visível.
+  useEffect(()=>{ window.scrollTo(0,0); }, [tela]);
   const [aba,     setAba]     = useState("talhoes");
   const [fazSel,  setFazSel]  = useState(null);
   const [subf,    setSubf]    = useState("FSP");
@@ -623,7 +627,7 @@ export default function App() {
   const AppStyle={fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.bg,minHeight:"100vh",maxWidth:480,margin:"0 auto",color:C.tx};
 
   const Hdr=({titulo,sub,onBack,extra})=>(
-    <div style={{background:C.sur2,borderBottom:`1px solid ${C.bor}`,padding:"13px 14px",display:"flex",alignItems:"center",gap:9}}>
+    <div style={{background:C.sur2,borderBottom:`1px solid ${C.bor}`,padding:"calc(13px + env(safe-area-inset-top)) 14px 13px",display:"flex",alignItems:"center",gap:9,position:"sticky",top:0,zIndex:40}}>
       {onBack&&<button onClick={onBack} style={{background:"none",border:"none",color:C.gr,cursor:"pointer",padding:0}}><IBack/></button>}
       <div style={{flex:1}}><div style={{fontSize:15,fontWeight:800}}>{titulo}</div>{sub&&<div style={{fontSize:10,color:C.txD}}>{sub}</div>}</div>
       {extra}
