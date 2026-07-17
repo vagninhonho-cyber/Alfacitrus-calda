@@ -20,7 +20,27 @@ const sbDelete= async (t,w) => { const r=await fetch(`${SUPABASE_URL}/rest/v1/${
 const fv    = v => parseFloat(v)||0;
 const fmtL  = v => `${Math.round(v).toLocaleString("pt-BR")} L`;
 const fmtP  = v => `${v.toFixed(1)}%`;
-const today = () => new Date().toISOString().split("T")[0];
+// Data padrão pra abrir o apontamento: ontem — ou o último dia útil (sexta)
+// se ontem foi sábado/domingo, já que o apontamento é feito no dia seguinte.
+// toISOString() converte pra UTC — no Brasil (UTC-3), isso pode virar o dia
+// errado se usado depois de ~21h locais. Estas duas funções usam sempre a
+// data LOCAL do aparelho, evitando esse desvio de fuso horário.
+const dataLocalISO = d => {
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), day=String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+};
+const today = () => dataLocalISO(new Date());
+const dataPadraoApontamento = () => {
+  const d = new Date();
+  d.setDate(d.getDate()-1);
+  const diaSemana = d.getDay(); // 0=domingo, 6=sábado
+  if(diaSemana===0) d.setDate(d.getDate()-2); // domingo -> volta pra sexta
+  else if(diaSemana===6) d.setDate(d.getDate()-1); // sábado -> volta pra sexta
+  return dataLocalISO(d);
+};
+// Bicos padrão por subfazenda — raramente muda, então já vem preenchido
+// (se precisar, dá pra alterar manualmente no campo mesmo assim).
+const bicosPadrao = subf => subf==="NSA" ? "80" : (subf==="FA"||subf==="FTD") ? "70" : "";
 
 const sortTalhoes = arr => [...arr].sort((a,b)=>{
   const na=parseInt(a.quadra.replace(/\D/g,""))||0;
@@ -84,7 +104,7 @@ const lbl = () => ({fontSize:10,fontWeight:700,color:C.txD,textTransform:"upperc
 // para que digitar não force remontagem — mantém o teclado aberto e o foco.
 // Só sincroniza pro estado externo no blur (onCommit), igual ao padrão já
 // usado no resto do formulário de apontamento.
-const NumInputMilhar = ({defaultValue,onCommit,placeholder,style}) => {
+const NumInputMilhar = ({defaultValue,onCommit,placeholder,style,aoVivo}) => {
   const formatar = v => {
     const raw = String(v??"").replace(/\D/g,"");
     if(!raw) return "";
@@ -94,7 +114,11 @@ const NumInputMilhar = ({defaultValue,onCommit,placeholder,style}) => {
   return (
     <input type="text" inputMode="numeric" placeholder={placeholder} style={style}
       value={texto}
-      onChange={e=>setTexto(formatar(e.target.value))}
+      onChange={e=>{
+        const novo=formatar(e.target.value);
+        setTexto(novo);
+        if(aoVivo) onCommit(novo.replace(/\D/g,""));
+      }}
       onBlur={()=>onCommit(texto.replace(/\D/g,""))}/>
   );
 };
@@ -192,7 +216,7 @@ export default function App() {
   const [ntals, setNtals] = useState([]);
 
   // Form apontamento
-  const [aData, setAData] = useState(today());
+  const [aData, setAData] = useState(dataPadraoApontamento());
   const [aOp,   setAOp]   = useState("");
   const [aEq,   setAEq]   = useState("");
   const [aTre,  setATre]  = useState([{velocidade:"",bicos:"",volume:""}]);
@@ -367,6 +391,17 @@ export default function App() {
     if(!apts.length) return null;
     return apts[apts.length-1].data;
   };
+  const primeiroApontamento = ap => {
+    const apts=ap.apontamentos.filter(r=>!r.cancelado);
+    if(!apts.length) return null;
+    return apts[0].data;
+  };
+  const fmtDataBR = dataStr => {
+    if(!dataStr) return "—";
+    const [y,m,d]=String(dataStr).slice(0,10).split("-");
+    if(!y||!m||!d) return dataStr;
+    return `${d}/${m}/${y}`;
+  };
 
   // ── AÇÕES ──────────────────────────────────────────────────────────────
   const tentarCriarAp = () => {
@@ -424,6 +459,7 @@ export default function App() {
     setAplicacoes(p=>[criada,...p]);
     setNextSeq(seqUsar+1);
     setApSel(criada);
+    setATre([{velocidade:"",bicos:bicosPadrao(criada.fazenda),volume:""}]);
     setTela("apontamento");
   };
 
@@ -435,7 +471,7 @@ export default function App() {
     const tals=getTalhoesAp(ap);
     const novoR={id:apId,data:aData,operador:aOp,equip:aEq,trechos:aTre,volTotal,volRateado:rateioVol(tals,volTotal),velMedia:velM,bicosMedia:bicosM,observacao:aObs,cancelado:false};
     setAplicacoes(p=>p.map(x=>x.id!==ap.id?x:{...x,apontamentos:[...x.apontamentos,novoR]}));
-    setAOp(""); setAEq(""); setATre([{velocidade:"",bicos:"",volume:""}]); setAData(today()); setAObs("");
+    setAOp(""); setAEq(""); setATre([{velocidade:"",bicos:bicosPadrao(ap.fazenda),volume:""}]); setAData(dataPadraoApontamento()); setAObs("");
     setTela("ap_detalhe");
     try {
       const opObj=operadores.find(o=>o.nome===aOp);
@@ -1539,7 +1575,7 @@ export default function App() {
                 {falta>0&&<div style={{fontSize:11,color:cor,textAlign:"center",marginTop:5}}>~{fmtL(falta)} restante</div>}
                 {ultimoApontamento(ap)&&<div style={{fontSize:10,color:C.txM,marginTop:4}}>Último apontamento: {ultimoApontamento(ap)}</div>}
                 <div style={{display:"flex",gap:8,marginTop:10}}>
-                  <button onClick={()=>{setApSel(ap);setTela("apontamento");}} style={{...btnP(),flex:1,padding:"11px",background:cor}}>+ Apontar</button>
+                  <button onClick={()=>{setApSel(ap);setATre([{velocidade:"",bicos:bicosPadrao(ap.fazenda),volume:""}]);setTela("apontamento");}} style={{...btnP(),flex:1,padding:"11px",background:cor}}>+ Apontar</button>
                   <button onClick={()=>{setApSel(ap);setTela("ap_detalhe");}} style={{...btnG(),flex:1,justifyContent:"center"}}>Detalhes</button>
                 </div>
               </div>
@@ -1556,7 +1592,7 @@ export default function App() {
                 const dev=esp>0?((real-esp)/esp)*100:null;
                 return (
                   <div key={ap.id} onClick={()=>{setApSel(ap);setTela("ap_detalhe");}} style={{padding:"8px 0",borderBottom:`1px solid ${C.bor2}`,cursor:"pointer",display:"flex",justifyContent:"space-between"}}>
-                    <div><div style={{fontSize:12,fontWeight:700}}>{ap.id}</div><div style={{fontSize:10,color:C.txM}}>{ap.dataCriacao} → {ap.dataFechamento}</div></div>
+                    <div><div style={{fontSize:12,fontWeight:700}}>{ap.id}</div><div style={{fontSize:10,color:C.txM}}>{fmtDataBR(primeiroApontamento(ap))} → {fmtDataBR(ultimoApontamento(ap))}</div></div>
                     <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:700,color:C.gr}}>{fmtL(real)}</div><Bdg v={dev}/></div>
                   </div>
                 );
@@ -1686,7 +1722,7 @@ export default function App() {
                   <div style={{flex:1}}><div style={{fontSize:9,color:C.txD,marginBottom:3}}>BICOS</div><input type="number" placeholder="60" value={t.bicos} onChange={e=>updTre(i,"bicos",e.target.value)} style={inp()}/></div>
                 </div>
                 <div style={{fontSize:9,color:C.txD,marginBottom:3}}>VOLUME (L)</div>
-                <NumInputMilhar placeholder="28.000" defaultValue={t.volume} onCommit={val=>updTre(i,"volume",val)} style={inp()}/>
+                <NumInputMilhar placeholder="28.000" defaultValue={t.volume} onCommit={val=>updTre(i,"volume",val)} aoVivo style={inp()}/>
                 {aTre.length>1&&<button onClick={()=>rmTre(i)} style={{position:"absolute",top:8,right:8,background:"none",border:"none",color:C.err,cursor:"pointer",fontSize:16}}>×</button>}
               </div>
             ))}
@@ -1813,7 +1849,7 @@ export default function App() {
           </div>
 
           {ap.status==="aberta"&&(<>
-            <button onClick={()=>{setApSel(ap);setTela("apontamento");}} style={{...btnP(),marginBottom:8,background:cor}}>+ Novo apontamento</button>
+            <button onClick={()=>{setApSel(ap);setATre([{velocidade:"",bicos:bicosPadrao(ap.fazenda),volume:""}]);setTela("apontamento");}} style={{...btnP(),marginBottom:8,background:cor}}>+ Novo apontamento</button>
             <button onClick={()=>fecharAp(ap.id)} style={{...btnG(),width:"100%",justifyContent:"center",borderColor:`${C.ok}44`,color:C.ok}}><ILock/> Marcar como concluído</button>
             {ap.apontamentos.filter(r=>!r.cancelado).length===0&&(
               <button onClick={()=>{setApExcluirId(ap.id);setSenhaExcluirIn("");setSenhaExcluirErr(false);setShowExcluirAp(true);}}
