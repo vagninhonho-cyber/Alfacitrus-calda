@@ -2114,10 +2114,28 @@ export default function App() {
                 <input placeholder="Matrícula (opcional)" value={novaOpMat} onChange={e=>setNovaOpMat(e.target.value)} style={{...inp(),marginBottom:10}}/>
                 <button onClick={async()=>{
                   if(!novaOp.trim()||!fazCfg) return;
+                  const nomeTrim=novaOp.trim();
                   try{
-                    const res=await sbPost("operadores",{nome:novaOp.trim(),matricula:novaOpMat.trim()||null,ativo:true});
-                    await sbPost("operador_fazenda",{id_operador:res[0].id,id_fazenda:fazCfg.id});
-                    setOperadores(p=>[...p,res[0]]); setOperadoresCfg(p=>[...p,res[0]]); setNovaOp(""); setNovaOpMat("");
+                    // Operador é uma pessoa única no sistema (compartilhada entre
+                    // fazendas) — se já existe alguém com esse nome (cadastrado em
+                    // outra fazenda), reaproveita o registro e só vincula à fazenda
+                    // atual, em vez de tentar criar um duplicado (que o banco recusa).
+                    const existentes=await sbGet(`operadores?select=*&nome=eq.${encodeURIComponent(nomeTrim)}`);
+                    let opFinal;
+                    if(existentes.length>0){
+                      opFinal=existentes[0];
+                      if(!opFinal.ativo) await sbPatch("operadores",`id=eq.${opFinal.id}`,{ativo:true});
+                      const jaVinculado=await sbGet(`operador_fazenda?select=id_operador&id_operador=eq.${opFinal.id}&id_fazenda=eq.${fazCfg.id}`);
+                      if(jaVinculado.length>0){ alert(`${nomeTrim} já está cadastrado em ${fazCfg.nome}.`); return; }
+                      await sbPost("operador_fazenda",{id_operador:opFinal.id,id_fazenda:fazCfg.id});
+                    } else {
+                      const res=await sbPost("operadores",{nome:nomeTrim,matricula:novaOpMat.trim()||null,ativo:true});
+                      opFinal=res[0];
+                      await sbPost("operador_fazenda",{id_operador:opFinal.id,id_fazenda:fazCfg.id});
+                    }
+                    setOperadores(p=>p.some(o=>o.id===opFinal.id)?p:[...p,opFinal]);
+                    setOperadoresCfg(p=>p.some(o=>o.id===opFinal.id)?p:[...p,opFinal]);
+                    setNovaOp(""); setNovaOpMat("");
                   }catch(e){alert("Erro: "+e.message);}
                 }} style={btnP()}>Adicionar operador</button>
               </div>
@@ -2140,10 +2158,24 @@ export default function App() {
                 <input placeholder="Nome" value={novaEq} onChange={e=>setNovaEq(e.target.value)} style={{...inp(),marginBottom:10}}/>
                 <button onClick={async()=>{
                   if(!novaEq.trim()||!fazCfg) return;
+                  const nomeTrim=novaEq.trim();
                   try{
-                    const res=await sbPost("equipamentos",{nome:novaEq.trim(),ativo:true});
-                    await sbPost("equipamento_fazenda",{id_equipamento:res[0].id,id_fazenda:fazCfg.id});
-                    setEquipamentos(p=>[...p,res[0]]); setEquipamentosCfg(p=>[...p,res[0]]); setNovaEq("");
+                    const existentes=await sbGet(`equipamentos?select=*&nome=eq.${encodeURIComponent(nomeTrim)}`);
+                    let eqFinal;
+                    if(existentes.length>0){
+                      eqFinal=existentes[0];
+                      if(!eqFinal.ativo) await sbPatch("equipamentos",`id=eq.${eqFinal.id}`,{ativo:true});
+                      const jaVinculado=await sbGet(`equipamento_fazenda?select=id_equipamento&id_equipamento=eq.${eqFinal.id}&id_fazenda=eq.${fazCfg.id}`);
+                      if(jaVinculado.length>0){ alert(`${nomeTrim} já está cadastrado em ${fazCfg.nome}.`); return; }
+                      await sbPost("equipamento_fazenda",{id_equipamento:eqFinal.id,id_fazenda:fazCfg.id});
+                    } else {
+                      const res=await sbPost("equipamentos",{nome:nomeTrim,ativo:true});
+                      eqFinal=res[0];
+                      await sbPost("equipamento_fazenda",{id_equipamento:eqFinal.id,id_fazenda:fazCfg.id});
+                    }
+                    setEquipamentos(p=>p.some(x=>x.id===eqFinal.id)?p:[...p,eqFinal]);
+                    setEquipamentosCfg(p=>p.some(x=>x.id===eqFinal.id)?p:[...p,eqFinal]);
+                    setNovaEq("");
                   }catch(e){alert("Erro: "+e.message);}
                 }} style={btnP()}>Adicionar equipamento</button>
               </div>
