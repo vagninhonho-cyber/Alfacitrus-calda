@@ -877,7 +877,7 @@ export default function App() {
   // TELA: ENTRADA
   // ════════════════════════════════════════════════════════════════════════
   if(tela==="entrada") return (
-    <div style={{...AppStyle,background:temaClaro?C.bg:"#040a04",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 24px",position:"relative"}}>
+    <div style={{...AppStyle,background:temaClaro?C.bg:"#040a04",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 24px 110px",position:"relative",overflowY:"auto"}}>
       <div style={{position:"absolute",inset:0,background:temaClaro?"radial-gradient(ellipse at 50% 40%, #e6f4ea 0%, #f4f7f4 70%)":"radial-gradient(ellipse at 50% 40%, #0d2a0d 0%, #040a04 70%)",pointerEvents:"none"}}/>
       <div style={{position:"relative",zIndex:1,width:"100%",display:"flex",flexDirection:"column",alignItems:"center"}}>
         <div style={{width:72,height:72,background:temaClaro?C.grDim:"#0f1f0f",border:`1.5px solid ${C.grDim}`,borderRadius:20,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:20,color:C.gr}}><ILeaf/></div>
