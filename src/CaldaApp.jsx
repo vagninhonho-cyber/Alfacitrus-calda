@@ -40,7 +40,7 @@ const dataPadraoApontamento = () => {
 };
 // Bicos padrão por subfazenda — raramente muda, então já vem preenchido
 // (se precisar, dá pra alterar manualmente no campo mesmo assim).
-const bicosPadrao = subf => subf==="NSA" ? "80" : (subf==="FA"||subf==="FTD") ? "70" : "";
+const bicosPadrao = subf => (subf==="NSA"||subf==="FV"||subf==="SMA") ? "80" : (subf==="FA"||subf==="FTD") ? "70" : "";
 
 const sortTalhoes = arr => [...arr].sort((a,b)=>{
   const na=parseInt(a.quadra.replace(/\D/g,""))||0;
