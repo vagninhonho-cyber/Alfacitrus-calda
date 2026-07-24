@@ -499,8 +499,11 @@ export default function App() {
   const fecharAp  = async id => {
     const ap = aplicacoes.find(x=>x.id===id);
     // Preserva a data do PRIMEIRO fechamento — reabrir pra editar e fechar de
-    // novo não deve "carimbar" a data de hoje por cima da data original.
-    const dataFinal = ap?.dataFechamento || today();
+    // novo não deve "carimbar" a data de hoje por cima da data original. E no
+    // primeiro fechamento, usa a data do ÚLTIMO apontamento (quando o trabalho
+    // realmente aconteceu) em vez de hoje — evita registrar a data de quando
+    // alguém lembrou de clicar em "Concluído", que pode ser bem depois.
+    const dataFinal = ap?.dataFechamento || ultimoApontamento(ap) || today();
     setAplicacoes(p=>p.map(x=>x.id!==id?x:{...x,status:"fechada",dataFechamento:dataFinal}));
     try{await sbPatch("aplicacoes",`id=eq.${id}`,{status:"fechada",data_fechamento:dataFinal});}catch(e){}
   };
