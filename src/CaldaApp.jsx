@@ -496,8 +496,20 @@ export default function App() {
     catch(e){console.error(e);}
   };
 
-  const fecharAp  = async id => { setAplicacoes(p=>p.map(x=>x.id!==id?x:{...x,status:"fechada",dataFechamento:today()})); try{await sbPatch("aplicacoes",`id=eq.${id}`,{status:"fechada",data_fechamento:today()});}catch(e){} };
-  const reabrirAp = async id => { setAplicacoes(p=>p.map(x=>x.id!==id?x:{...x,status:"aberta",dataFechamento:null})); try{await sbPatch("aplicacoes",`id=eq.${id}`,{status:"aberta",data_fechamento:null});}catch(e){} };
+  const fecharAp  = async id => {
+    const ap = aplicacoes.find(x=>x.id===id);
+    // Preserva a data do PRIMEIRO fechamento — reabrir pra editar e fechar de
+    // novo não deve "carimbar" a data de hoje por cima da data original.
+    const dataFinal = ap?.dataFechamento || today();
+    setAplicacoes(p=>p.map(x=>x.id!==id?x:{...x,status:"fechada",dataFechamento:dataFinal}));
+    try{await sbPatch("aplicacoes",`id=eq.${id}`,{status:"fechada",data_fechamento:dataFinal});}catch(e){}
+  };
+  const reabrirAp = async id => {
+    // NÃO apaga data_fechamento — reabrir é só pra editar; a data do primeiro
+    // fechamento continua sendo a referência real de quando o trabalho aconteceu.
+    setAplicacoes(p=>p.map(x=>x.id!==id?x:{...x,status:"aberta"}));
+    try{await sbPatch("aplicacoes",`id=eq.${id}`,{status:"aberta"});}catch(e){}
+  };
 
   const abrirEdicaoApt = (apId, r) => {
     setAptEditando({apId, rId:r.id});
