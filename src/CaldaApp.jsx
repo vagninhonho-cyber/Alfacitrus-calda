@@ -558,8 +558,10 @@ export default function App() {
       if(ap && tals.length){
         const outrosTrechos = ap.apontamentos.filter(r=>r.id!==rId && !r.cancelado).flatMap(r=>r.trechos);
         const veMap = calcVEconsol([...outrosTrechos, ...aptEditTrechos], tals);
-        const volsExist = await sbGet(`apontamento_talhao_volume?select=id&id_apontamento=eq.${rId}`);
-        await Promise.all(volsExist.map(v=>sbDelete("apontamento_talhao_volume",`id=eq.${v.id}`)));
+        // A tabela usa chave composta (id_apontamento, cod_talhao) — não tem
+        // coluna "id" própria. Deletar direto pelo filtro evita precisar
+        // buscar um "id" que não existe (isso falhava silenciosamente antes).
+        await sbDelete("apontamento_talhao_volume", `id_apontamento=eq.${rId}`);
         await Promise.all(ap.talhoes.map(cod=>sbPost("apontamento_talhao_volume",{
           id_apontamento:rId, cod_talhao:cod,
           vol_rateado:novoVolRateado[cod]||0, ve_consolidado:veMap[cod]||0,
