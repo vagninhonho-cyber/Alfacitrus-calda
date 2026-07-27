@@ -582,7 +582,10 @@ export default function App() {
           vol_rateado:novoVolRateado[cod]||0, ve_consolidado:veMap[cod]||0,
         })));
       }
-    } catch(e){ console.error(e); }
+    } catch(e){
+      console.error(e);
+      alert("Erro ao salvar a edição no banco de dados. As alterações podem NÃO ter sido salvas — verifique e tente novamente.\n\nDetalhe técnico: "+e.message);
+    }
   };
   const excluirAplicacao = async (senhaDigitada) => {
     const s = senhaDigitada !== undefined ? senhaDigitada : senhaExcluirIn;
