@@ -902,21 +902,17 @@ export default function App() {
                   <span style={lbl()}>Vel. (km/h)</span>
                   {mostrarVelPreset(apEdit?.fazenda) ? (
                     <>
-                      <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:5}}>
-                        {VELOCIDADES_FSP.map(v=>{
-                          const vStr=String(v);
-                          const ativo=String(t.velocidade)===vStr;
-                          return (
-                            <button key={v} type="button" onClick={()=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:vStr}))}
-                              style={{padding:"5px 8px",borderRadius:7,fontSize:11,fontWeight:700,border:`1px solid ${ativo?C.gr:C.bor}`,background:ativo?C.gr:C.sur2,color:ativo?"#fff":C.tx,cursor:"pointer"}}>
-                              {vStr.replace(".",",")}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <input type="number" step="0.1" placeholder="Outro..." defaultValue={t.velocidade}
-                        onBlur={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:e.target.value}))}
-                        style={{...inp(),padding:"7px 8px"}}/>
+                      <select value={VELOCIDADES_FSP.map(String).includes(String(t.velocidade))?String(t.velocidade):"outro"}
+                        onChange={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:e.target.value==="outro"?"":e.target.value}))}
+                        style={{...inp(),padding:"7px 8px"}}>
+                        {VELOCIDADES_FSP.map(v=><option key={v} value={String(v)}>{String(v).replace(".",",")} km/h</option>)}
+                        <option value="outro">Outro...</option>
+                      </select>
+                      {!VELOCIDADES_FSP.map(String).includes(String(t.velocidade))&&(
+                        <input type="number" step="0.1" placeholder="Digite a velocidade" defaultValue={t.velocidade}
+                          onBlur={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:e.target.value}))}
+                          style={{...inp(),padding:"7px 8px",marginTop:5}}/>
+                      )}
                     </>
                   ) : (
                     <input type="number" step="0.1" defaultValue={t.velocidade}
@@ -1814,19 +1810,15 @@ export default function App() {
                     <div style={{fontSize:9,color:C.txD,marginBottom:3}}>VEL. KM/H</div>
                     {mostrarVelPreset(ap.fazenda) ? (
                       <>
-                        <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:5}}>
-                          {VELOCIDADES_FSP.map(v=>{
-                            const vStr=String(v);
-                            const ativo=t.velocidade===vStr;
-                            return (
-                              <button key={v} type="button" onClick={()=>updTre(i,"velocidade",vStr)}
-                                style={{padding:"5px 8px",borderRadius:7,fontSize:11,fontWeight:700,border:`1px solid ${ativo?C.gr:C.bor}`,background:ativo?C.gr:C.sur2,color:ativo?"#fff":C.tx,cursor:"pointer"}}>
-                                {vStr.replace(".",",")}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        <input type="number" step="0.1" placeholder="Outro..." value={t.velocidade} onChange={e=>updTre(i,"velocidade",e.target.value)} style={inp()}/>
+                        <select value={VELOCIDADES_FSP.map(String).includes(t.velocidade)?t.velocidade:"outro"}
+                          onChange={e=>updTre(i,"velocidade",e.target.value==="outro"?"":e.target.value)}
+                          style={inp()}>
+                          {VELOCIDADES_FSP.map(v=><option key={v} value={String(v)}>{String(v).replace(".",",")} km/h</option>)}
+                          <option value="outro">Outro...</option>
+                        </select>
+                        {!VELOCIDADES_FSP.map(String).includes(t.velocidade)&&(
+                          <input type="number" step="0.1" placeholder="Digite a velocidade" value={t.velocidade} onChange={e=>updTre(i,"velocidade",e.target.value)} style={{...inp(),marginTop:5}}/>
+                        )}
                       </>
                     ) : (
                       <input type="number" step="0.1" placeholder="4.2" value={t.velocidade} onChange={e=>updTre(i,"velocidade",e.target.value)} style={inp()}/>
