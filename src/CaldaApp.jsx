@@ -900,25 +900,33 @@ export default function App() {
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
                 <div>
                   <span style={lbl()}>Vel. (km/h)</span>
-                  {mostrarVelPreset(apEdit?.fazenda) ? (
-                    <>
-                      <select value={VELOCIDADES_FSP.map(String).includes(String(t.velocidade))?String(t.velocidade):"outro"}
-                        onChange={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:e.target.value==="outro"?"":e.target.value}))}
+                  {(()=>{ const emManual = t.velManual || (t.velocidade && !VELOCIDADES_FSP.map(String).includes(String(t.velocidade))); return mostrarVelPreset(apEdit?.fazenda) ? (
+                    emManual ? (
+                      <>
+                        <input type="number" step="0.1" autoFocus placeholder="Digite a velocidade" defaultValue={t.velocidade}
+                          onBlur={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:e.target.value}))}
+                          style={{...inp(),padding:"7px 8px"}}/>
+                        <span onClick={()=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velManual:false,velocidade:""}))}
+                          style={{fontSize:9,color:C.gr,cursor:"pointer",display:"inline-block",marginTop:3}}>‹ usar lista</span>
+                      </>
+                    ) : (
+                      <select value={VELOCIDADES_FSP.map(String).includes(String(t.velocidade))?String(t.velocidade):""}
+                        onChange={e=>{
+                          const v=e.target.value;
+                          if(v==="outro") setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:"",velManual:true}));
+                          else setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:v}));
+                        }}
                         style={{...inp(),padding:"7px 8px"}}>
+                        <option value="" disabled>Selecionar...</option>
                         {VELOCIDADES_FSP.map(v=><option key={v} value={String(v)}>{String(v).replace(".",",")} km/h</option>)}
                         <option value="outro">Outro...</option>
                       </select>
-                      {!VELOCIDADES_FSP.map(String).includes(String(t.velocidade))&&(
-                        <input type="number" step="0.1" placeholder="Digite a velocidade" defaultValue={t.velocidade}
-                          onBlur={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:e.target.value}))}
-                          style={{...inp(),padding:"7px 8px",marginTop:5}}/>
-                      )}
-                    </>
+                    )
                   ) : (
                     <input type="number" step="0.1" defaultValue={t.velocidade}
                       onBlur={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:e.target.value}))}
                       style={{...inp(),padding:"7px 8px"}}/>
-                  )}
+                  ); })()}
                 </div>
                 <div>
                   <span style={lbl()}>Bicos</span>
@@ -1808,21 +1816,31 @@ export default function App() {
                 <div style={{display:"flex",gap:7,marginBottom:7}}>
                   <div style={{flex:1}}>
                     <div style={{fontSize:9,color:C.txD,marginBottom:3}}>VEL. KM/H</div>
-                    {mostrarVelPreset(ap.fazenda) ? (
-                      <>
-                        <select value={VELOCIDADES_FSP.map(String).includes(t.velocidade)?t.velocidade:"outro"}
-                          onChange={e=>updTre(i,"velocidade",e.target.value==="outro"?"":e.target.value)}
+                    {(()=>{ const emManual = t.velManual || (t.velocidade && !VELOCIDADES_FSP.map(String).includes(t.velocidade)); return mostrarVelPreset(ap.fazenda) ? (
+                      emManual ? (
+                        <>
+                          <input type="number" step="0.1" autoFocus placeholder="Digite a velocidade" value={t.velocidade}
+                            onChange={e=>setATre(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:e.target.value}))}
+                            style={inp()}/>
+                          <span onClick={()=>setATre(p=>p.map((x,j)=>j!==i?x:{...x,velManual:false,velocidade:""}))}
+                            style={{fontSize:9,color:C.gr,cursor:"pointer",display:"inline-block",marginTop:3}}>‹ usar lista</span>
+                        </>
+                      ) : (
+                        <select value={VELOCIDADES_FSP.map(String).includes(t.velocidade)?t.velocidade:""}
+                          onChange={e=>{
+                            const v=e.target.value;
+                            if(v==="outro") setATre(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:"",velManual:true}));
+                            else updTre(i,"velocidade",v);
+                          }}
                           style={inp()}>
+                          <option value="" disabled>Selecionar...</option>
                           {VELOCIDADES_FSP.map(v=><option key={v} value={String(v)}>{String(v).replace(".",",")} km/h</option>)}
                           <option value="outro">Outro...</option>
                         </select>
-                        {!VELOCIDADES_FSP.map(String).includes(t.velocidade)&&(
-                          <input type="number" step="0.1" placeholder="Digite a velocidade" value={t.velocidade} onChange={e=>updTre(i,"velocidade",e.target.value)} style={{...inp(),marginTop:5}}/>
-                        )}
-                      </>
+                      )
                     ) : (
                       <input type="number" step="0.1" placeholder="4.2" value={t.velocidade} onChange={e=>updTre(i,"velocidade",e.target.value)} style={inp()}/>
-                    )}
+                    ); })()}
                   </div>
                   <div style={{flex:1}}><div style={{fontSize:9,color:C.txD,marginBottom:3}}>BICOS</div><input type="number" placeholder="60" value={t.bicos} onChange={e=>updTre(i,"bicos",e.target.value)} style={inp()}/></div>
                 </div>
