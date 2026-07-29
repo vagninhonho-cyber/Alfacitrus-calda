@@ -41,6 +41,11 @@ const dataPadraoApontamento = () => {
 // Bicos padrão por subfazenda — raramente muda, então já vem preenchido
 // (se precisar, dá pra alterar manualmente no campo mesmo assim).
 const bicosPadrao = subf => (subf==="NSA"||subf==="FV"||subf==="SMA") ? "80" : (subf==="FA"||subf==="FTD") ? "70" : "";
+// Velocidades mais usadas na Fazenda São Pedro (FSP/FSF) — mostra como
+// botões de seleção rápida em vez de abrir o teclado direto, com opção
+// de digitar outro valor se nenhuma dessas servir.
+const VELOCIDADES_FSP = [2, 2.8, 3.7, 4.2];
+const mostrarVelPreset = subf => subf==="FSP"||subf==="FSF";
 
 const sortTalhoes = arr => [...arr].sort((a,b)=>{
   const na=parseInt(a.quadra.replace(/\D/g,""))||0;
@@ -179,6 +184,24 @@ export default function App() {
   const [aplicacoes,   setAplicacoes]   = useState([]);
   const [nextSeq,      setNextSeq]      = useState(1);
 
+  // Carrega a lista de fazendas — usada tanto automaticamente ao abrir o
+  // app quanto manualmente (botão "Tentar novamente" se der erro de rede).
+  const carregarFazendasList = async () => {
+    setLoading(true);
+    try{
+      const fazDB=await sbGet(`fazendas?select=*&ativo=eq.true`);
+      const subfDB=await sbGet(`subfazendas?select=*&ativo=eq.true`);
+      const fazComSubf=fazDB.map(f=>({...f,subfazendas:subfDB.filter(s=>s.id_fazenda===f.id)}));
+      setFazendas(fazComSubf);
+      setErroDb(null);
+    }catch(e){setErroDb("Erro ao carregar fazendas");}
+    setLoading(false);
+  };
+  // Carrega automaticamente ao abrir o app — antes exigia clicar num botão
+  // manual, o que também deixava a tela de Configurações sem nenhuma
+  // fazenda pra escolher até alguém lembrar de clicar nesse botão.
+  useEffect(()=>{ carregarFazendasList(); }, []);
+
   // Senha config
   const [senhaConfig, setSenhaConfig] = useState("1234");
   const [showSenha,   setShowSenha]   = useState(false);
@@ -214,6 +237,30 @@ export default function App() {
   // Navegação
   const [talSel, setTalSel] = useState(null);
   const [apSel,  setApSel]  = useState(null);
+
+  // Pilha de navegação — guarda tela+aba+seleção de onde você veio, pra
+  // "voltar" te devolver exatamente pro lugar certo (não um destino fixo).
+  const [navStack, setNavStack] = useState([]);
+  const irPara = (novaTela, opts={}) => {
+    setNavStack(p=>[...p, {tela, aba, talSel, apSel}]);
+    if(opts.talSel!==undefined) setTalSel(opts.talSel);
+    if(opts.apSel!==undefined) setApSel(opts.apSel);
+    setTela(novaTela);
+  };
+  const voltarNav = (fallback="main") => {
+    if(navStack.length===0){ setTela(fallback); return; }
+    const nova=[...navStack];
+    const anterior=nova.pop();
+    setNavStack(nova);
+    setTela(anterior.tela);
+    if(anterior.aba!==undefined) setAba(anterior.aba);
+    if(anterior.talSel!==undefined) setTalSel(anterior.talSel);
+    if(anterior.apSel!==undefined) setApSel(anterior.apSel);
+  };
+  const voltarParaInicio = () => {
+    setNavStack([]);
+    setTela("entrada");
+  };
 
   // Form nova aplicação
   const [nfaz,  setNfaz]  = useState("FSP");
@@ -464,6 +511,10 @@ export default function App() {
     setNextSeq(seqUsar+1);
     setApSel(criada);
     setATre([{velocidade:"",bicos:bicosPadrao(criada.fazenda),volume:""}]);
+    // Empilha "ap_detalhe" (não a tela de origem "nova_ap") como destino do
+    // voltar — depois de criar, voltar deve mostrar a aplicação recém-criada,
+    // não reabrir o formulário de criação.
+    setNavStack(p=>[...p, {tela:"ap_detalhe", aba, talSel, apSel:criada}]);
     setTela("apontamento");
   };
 
@@ -476,7 +527,7 @@ export default function App() {
     const novoR={id:apId,data:aData,operador:aOp,equip:aEq,trechos:aTre,volTotal,volRateado:rateioVol(tals,volTotal),velMedia:velM,bicosMedia:bicosM,observacao:aObs,cancelado:false};
     setAplicacoes(p=>p.map(x=>x.id!==ap.id?x:{...x,apontamentos:[...x.apontamentos,novoR]}));
     setAOp(""); setAEq(""); setATre([{velocidade:"",bicos:bicosPadrao(ap.fazenda),volume:""}]); setAData(dataPadraoApontamento()); setAObs("");
-    setTela("ap_detalhe");
+    voltarNav("ap_detalhe");
     try {
       const opObj=operadores.find(o=>o.nome===aOp);
       const eqObj=equipamentos.find(e=>e.nome===aEq);
@@ -596,6 +647,7 @@ export default function App() {
       await sbDelete("aplicacoes", `id=eq.${apExcluirId}`);
       setAplicacoes(p=>p.filter(x=>x.id!==apExcluirId));
       setShowExcluirAp(false); setSenhaExcluirIn(""); setSenhaExcluirErr(false); setApExcluirId(null);
+      setNavStack([]);
       setTela("main");
     } catch(e) { alert("Erro ao excluir: "+e.message); }
   };
@@ -632,6 +684,7 @@ export default function App() {
         setNfaz(faz.subfazendas[0]?.id||"");
         carregar(faz);
         setAba("talhoes");
+        setNavStack([]);
         setTela("main");
       } else {
         setSenhaFazErr(true);
@@ -657,7 +710,7 @@ export default function App() {
   const NavBar=()=>(
     <nav style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:C.sur2,borderTop:`1px solid ${C.bor}`,display:"flex",padding:"8px 0 12px",zIndex:50}}>
       {[{id:"talhoes",label:"TALHÕES",icon:<IGrid/>},{id:"aplicacoes",label:"APLICAÇÕES",icon:<IList/>},{id:"painel",label:"PAINEL",icon:<IChart/>},{id:"relatorio",label:"RELATÓRIO",icon:<IReport/>}].map(n=>(
-        <button key={n.id} onClick={()=>{setAba(n.id);setTela("main");}}
+        <button key={n.id} onClick={()=>{setAba(n.id);setNavStack([]);setTela("main");}}
           style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,background:"none",border:"none",cursor:"pointer",color:aba===n.id?C.gr:C.txM,fontSize:9,fontWeight:700,letterSpacing:.3}}>
           {n.icon}<span>{n.label}</span>
         </button>
@@ -806,6 +859,7 @@ export default function App() {
 
   const ModalEditarApt=()=>{
     if(!showEditarApt) return null;
+    const apEdit = aptEditando ? aplicacoes.find(x=>x.id===aptEditando.apId) : null;
     return (
       <div style={{position:"fixed",inset:0,background:"#000d",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200}}>
         <div style={{background:C.sur2,border:`1.5px solid ${C.bor}`,borderRadius:"20px 20px 0 0",padding:20,width:"100%",maxWidth:480,maxHeight:"90vh",overflowY:"auto",overflowX:"hidden",boxSizing:"border-box"}}>
@@ -846,9 +900,29 @@ export default function App() {
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
                 <div>
                   <span style={lbl()}>Vel. (km/h)</span>
-                  <input type="number" step="0.1" defaultValue={t.velocidade}
-                    onBlur={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:e.target.value}))}
-                    style={{...inp(),padding:"7px 8px"}}/>
+                  {mostrarVelPreset(apEdit?.fazenda) ? (
+                    <>
+                      <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:5}}>
+                        {VELOCIDADES_FSP.map(v=>{
+                          const vStr=String(v);
+                          const ativo=String(t.velocidade)===vStr;
+                          return (
+                            <button key={v} type="button" onClick={()=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:vStr}))}
+                              style={{padding:"5px 8px",borderRadius:7,fontSize:11,fontWeight:700,border:`1px solid ${ativo?C.gr:C.bor}`,background:ativo?C.gr:C.sur2,color:ativo?"#fff":C.tx,cursor:"pointer"}}>
+                              {vStr.replace(".",",")}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <input type="number" step="0.1" placeholder="Outro..." defaultValue={t.velocidade}
+                        onBlur={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:e.target.value}))}
+                        style={{...inp(),padding:"7px 8px"}}/>
+                    </>
+                  ) : (
+                    <input type="number" step="0.1" defaultValue={t.velocidade}
+                      onBlur={e=>setAptEditTrechos(p=>p.map((x,j)=>j!==i?x:{...x,velocidade:e.target.value}))}
+                      style={{...inp(),padding:"7px 8px"}}/>
+                  )}
                 </div>
                 <div>
                   <span style={lbl()}>Bicos</span>
@@ -907,17 +981,11 @@ export default function App() {
         <div style={{width:"100%"}}>
           <div style={{fontSize:10,fontWeight:700,letterSpacing:1.5,color:C.txM,textAlign:"center",marginBottom:12}}>SELECIONE A PROPRIEDADE</div>
           {loading&&<div style={{textAlign:"center",color:C.txD,fontSize:12,marginBottom:12}}>Carregando fazendas...</div>}
-          {fazendas.length===0&&!loading&&(
-            <button onClick={async()=>{
-              setLoading(true);
-              try{
-                const fazDB=await sbGet(`fazendas?select=*&ativo=eq.true`);
-                const subfDB=await sbGet(`subfazendas?select=*&ativo=eq.true`);
-                const fazComSubf=fazDB.map(f=>({...f,subfazendas:subfDB.filter(s=>s.id_fazenda===f.id)}));
-                setFazendas(fazComSubf);
-              }catch(e){setErroDb("Erro ao carregar fazendas");}
-              setLoading(false);
-            }} style={btnP()}>Carregar fazendas</button>
+          {erroDb&&!loading&&fazendas.length===0&&(
+            <div style={{textAlign:"center",marginBottom:12}}>
+              <div style={{color:C.err,fontSize:12,marginBottom:8}}>{erroDb}</div>
+              <button onClick={carregarFazendasList} style={btnP()}>Tentar novamente</button>
+            </div>
           )}
           {fazendas.map(faz=>(
             <button key={faz.id} onClick={()=>{setFazPendente(faz);setSenhaFazIn("");setSenhaFazErr(false);setShowSenhaFaz(true);}}
@@ -968,7 +1036,7 @@ export default function App() {
             const ultima=hist.find(a=>a.status==="fechada");
             const status=abs.length>0?"aberta":ultima?"fechada":"nenhuma";
             return (
-              <button key={t.cod} onClick={()=>{setTalSel(t);setTela("tal_detalhe");}}
+              <button key={t.cod} onClick={()=>irPara("tal_detalhe",{talSel:t})}
                 style={{background:C.sur2,border:`1px solid ${abs.length>0?`${corAp(0)}44`:C.bor}`,borderRadius:14,padding:"11px 12px",cursor:"pointer",textAlign:"left",color:C.tx}}>
                 <div style={{fontSize:26,fontWeight:900,lineHeight:1,marginBottom:2}}>{t.quadra}</div>
                 <div style={{fontSize:10,color:C.txD,marginBottom:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.variedade}</div>
@@ -990,7 +1058,7 @@ export default function App() {
             );
           })}
         </div>
-        <button onClick={()=>{setNfaz(subf);setNtals([]);setTela("nova_ap");}} style={btnP()}><IPlus/> Nova aplicação</button>
+        <button onClick={()=>{setNfaz(subf);setNtals([]);irPara("nova_ap");}} style={btnP()}><IPlus/> Nova aplicação</button>
       </div>
     );
 
@@ -1119,7 +1187,7 @@ export default function App() {
             const talsAbs=ap.talhoes.flatMap(cod=>apAbertasDeTal(cod));
             const corIdx=talsAbs.indexOf(ap)>0?1:0;
             return (
-              <div key={ap.id} style={{...crd(),cursor:"pointer",borderColor:ap.status==="aberta"?`${corAp(corIdx)}33`:C.bor}} onClick={()=>{setApSel(ap);setTela("ap_detalhe");}}>
+              <div key={ap.id} style={{...crd(),cursor:"pointer",borderColor:ap.status==="aberta"?`${corAp(corIdx)}33`:C.bor}} onClick={()=>irPara("ap_detalhe",{apSel:ap})}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
                   <div>
                     <div style={{fontSize:17,fontWeight:900}}>Talhão {ap.talhoes.map(c=>getTal(c)?.quadra).join(" + ")}</div>
@@ -1185,7 +1253,7 @@ export default function App() {
                 const volR=ap.apontamentos.filter(r=>!r.cancelado).reduce((s,r)=>s+r.volTotal,0);
                 const ult=ultimoApontamento(ap);
                 return (
-                  <div key={ap.id} style={{padding:"8px 0",borderBottom:`1px solid ${C.bor2}`,cursor:"pointer"}} onClick={()=>{setApSel(ap);setTela("ap_detalhe");}}>
+                  <div key={ap.id} style={{padding:"8px 0",borderBottom:`1px solid ${C.bor2}`,cursor:"pointer"}} onClick={()=>irPara("ap_detalhe",{apSel:ap})}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                       <div><span style={{fontSize:13,fontWeight:800}}>Talhão {ap.talhoes.map(c=>getTal(c)?.quadra).join("+")}</span>{ult&&<div style={{fontSize:9,color:C.txM}}>último apto: {ult}</div>}</div>
                       <span style={{fontSize:11,fontWeight:700,color:C.warn}}>{fmtP(pct)}</span>
@@ -1556,7 +1624,7 @@ export default function App() {
 
     return (
       <div style={AppStyle}>
-        <Hdr titulo={fazSel?.nome||"AlfaCitrus"} sub="Controle de pulverização" onBack={()=>setTela("entrada")}
+        <Hdr titulo={fazSel?.nome||"AlfaCitrus"} sub="Controle de pulverização" onBack={voltarParaInicio}
           extra={<div style={{display:"flex",gap:6}}>{fazSel?.subfazendas.map(s=><ChipFaz key={s.id} active={subf===s.id} onClick={()=>setSubf(s.id)}>{s.sigla}</ChipFaz>)}</div>}/>
         {aba==="talhoes"&&<TabTalhoes/>}
         {aba==="aplicacoes"&&<TabAplicacoes/>}
@@ -1576,7 +1644,7 @@ export default function App() {
     const hist=apsDeTal(talSel.cod).filter(a=>a.status==="fechada");
     return (
       <div style={AppStyle}>
-        <Hdr titulo={`Talhão ${talSel.quadra}`} sub={`${talSel.variedade} · ${parseFloat(talSel.area).toFixed(2)} ha · ${talSel.plantas.toLocaleString("pt-BR")} pl`} onBack={()=>setTela("main")}/>
+        <Hdr titulo={`Talhão ${talSel.quadra}`} sub={`${talSel.variedade} · ${parseFloat(talSel.area).toFixed(2)} ha · ${talSel.plantas.toLocaleString("pt-BR")} pl`} onBack={()=>voltarNav("main")}/>
         <div style={{padding:12}}>
           {abs.map((ap,i)=>{
             const pct=pctCobertura(ap);
@@ -1599,13 +1667,13 @@ export default function App() {
                 {falta>0&&<div style={{fontSize:11,color:cor,textAlign:"center",marginTop:5}}>~{fmtL(falta)} restante</div>}
                 {ultimoApontamento(ap)&&<div style={{fontSize:10,color:C.txM,marginTop:4}}>Último apontamento: {ultimoApontamento(ap)}</div>}
                 <div style={{display:"flex",gap:8,marginTop:10}}>
-                  <button onClick={()=>{setApSel(ap);setATre([{velocidade:"",bicos:bicosPadrao(ap.fazenda),volume:""}]);setTela("apontamento");}} style={{...btnP(),flex:1,padding:"11px",background:cor}}>+ Apontar</button>
-                  <button onClick={()=>{setApSel(ap);setTela("ap_detalhe");}} style={{...btnG(),flex:1,justifyContent:"center"}}>Detalhes</button>
+                  <button onClick={()=>{setATre([{velocidade:"",bicos:bicosPadrao(ap.fazenda),volume:""}]);irPara("apontamento",{apSel:ap});}} style={{...btnP(),flex:1,padding:"11px",background:cor}}>+ Apontar</button>
+                  <button onClick={()=>irPara("ap_detalhe",{apSel:ap})} style={{...btnG(),flex:1,justifyContent:"center"}}>Detalhes</button>
                 </div>
               </div>
             );
           })}
-          {abs.length===0&&<button onClick={()=>{setNfaz(subf);setNtals([talSel]);setTela("nova_ap");}} style={btnP()}><IPlus/> Iniciar nova aplicação</button>}
+          {abs.length===0&&<button onClick={()=>{setNfaz(subf);setNtals([talSel]);irPara("nova_ap");}} style={btnP()}><IPlus/> Iniciar nova aplicação</button>}
           {hist.length>0&&(
             <div style={crd()}>
               <span style={lbl()}>Histórico</span>
@@ -1615,7 +1683,7 @@ export default function App() {
                 const esp=veMap[talSel.cod]||0;
                 const dev=esp>0?((real-esp)/esp)*100:null;
                 return (
-                  <div key={ap.id} onClick={()=>{setApSel(ap);setTela("ap_detalhe");}} style={{padding:"8px 0",borderBottom:`1px solid ${C.bor2}`,cursor:"pointer",display:"flex",justifyContent:"space-between"}}>
+                  <div key={ap.id} onClick={()=>irPara("ap_detalhe",{apSel:ap})} style={{padding:"8px 0",borderBottom:`1px solid ${C.bor2}`,cursor:"pointer",display:"flex",justifyContent:"space-between"}}>
                     <div><div style={{fontSize:12,fontWeight:700}}>{ap.id}</div><div style={{fontSize:10,color:C.txM}}>{fmtDataBR(primeiroApontamento(ap))} → {fmtDataBR(ultimoApontamento(ap))}</div></div>
                     <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:700,color:C.gr}}>{fmtL(real)}</div><Bdg v={dev}/></div>
                   </div>
@@ -1635,7 +1703,7 @@ export default function App() {
     const tals=sortTalhoes(talhoes.filter(t=>t.id_subfazenda===nfaz));
     return (
       <div style={AppStyle}>
-        <Hdr titulo="Nova aplicação" sub={`AP-${String(nextSeq).padStart(4,"0")}`} onBack={()=>setTela("main")}/>
+        <Hdr titulo="Nova aplicação" sub={`AP-${String(nextSeq).padStart(4,"0")}`} onBack={()=>voltarNav("main")}/>
         <div style={{padding:12}}>
           <div style={crd()}>
             <span style={lbl()}>Subfazenda</span>
@@ -1683,7 +1751,7 @@ export default function App() {
 
     return (
       <div style={AppStyle}>
-        <Hdr titulo={`Talhão ${tals.map(t=>t.quadra).join(" + ")}`} sub={`${ap.id} · Apontamento #${ap.apontamentos.filter(r=>!r.cancelado).length+1}`} onBack={()=>setTela("ap_detalhe")}/>
+        <Hdr titulo={`Talhão ${tals.map(t=>t.quadra).join(" + ")}`} sub={`${ap.id} · Apontamento #${ap.apontamentos.filter(r=>!r.cancelado).length+1}`} onBack={()=>voltarNav("ap_detalhe")}/>
         <div style={{padding:12}}>
           {ap.apontamentos.filter(r=>!r.cancelado).length>0&&veTot>0&&(
             <div style={{...crd(),borderColor:C.grDim,padding:"10px 13px"}}>
@@ -1742,7 +1810,28 @@ export default function App() {
               <div key={`${i}_${aTre.length}`} style={{background:C.sur,borderRadius:10,padding:10,marginBottom:7,position:"relative"}}>
                 <div style={{fontSize:9,color:C.txM,fontWeight:700,marginBottom:6}}>TRECHO {i+1}</div>
                 <div style={{display:"flex",gap:7,marginBottom:7}}>
-                  <div style={{flex:1}}><div style={{fontSize:9,color:C.txD,marginBottom:3}}>VEL. KM/H</div><input type="number" step="0.1" placeholder="4.2" value={t.velocidade} onChange={e=>updTre(i,"velocidade",e.target.value)} style={inp()}/></div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:9,color:C.txD,marginBottom:3}}>VEL. KM/H</div>
+                    {mostrarVelPreset(ap.fazenda) ? (
+                      <>
+                        <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:5}}>
+                          {VELOCIDADES_FSP.map(v=>{
+                            const vStr=String(v);
+                            const ativo=t.velocidade===vStr;
+                            return (
+                              <button key={v} type="button" onClick={()=>updTre(i,"velocidade",vStr)}
+                                style={{padding:"5px 8px",borderRadius:7,fontSize:11,fontWeight:700,border:`1px solid ${ativo?C.gr:C.bor}`,background:ativo?C.gr:C.sur2,color:ativo?"#fff":C.tx,cursor:"pointer"}}>
+                                {vStr.replace(".",",")}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <input type="number" step="0.1" placeholder="Outro..." value={t.velocidade} onChange={e=>updTre(i,"velocidade",e.target.value)} style={inp()}/>
+                      </>
+                    ) : (
+                      <input type="number" step="0.1" placeholder="4.2" value={t.velocidade} onChange={e=>updTre(i,"velocidade",e.target.value)} style={inp()}/>
+                    )}
+                  </div>
                   <div style={{flex:1}}><div style={{fontSize:9,color:C.txD,marginBottom:3}}>BICOS</div><input type="number" placeholder="60" value={t.bicos} onChange={e=>updTre(i,"bicos",e.target.value)} style={inp()}/></div>
                 </div>
                 <div style={{fontSize:9,color:C.txD,marginBottom:3}}>VOLUME (L)</div>
@@ -1792,7 +1881,7 @@ export default function App() {
 
     return (
       <div style={AppStyle}>
-        <Hdr titulo={`Talhão ${tals.map(t=>t.quadra).join(" + ")}`} sub={`${ap.id} · ${ap.fazenda}`} onBack={()=>setTela("main")}
+        <Hdr titulo={`Talhão ${tals.map(t=>t.quadra).join(" + ")}`} sub={`${ap.id} · ${ap.fazenda}`} onBack={()=>voltarNav("main")}
           extra={<span style={{fontSize:9,fontWeight:700,padding:"3px 9px",borderRadius:8,background:ap.status==="aberta"?bgCorAp(corIdx):C.okBg,color:ap.status==="aberta"?cor:C.ok}}>{ap.status==="aberta"?"ABERTA":"CONCLUÍDA"}</span>}/>
         <div style={{padding:12}}>
           <div style={crd()}>
@@ -1873,7 +1962,7 @@ export default function App() {
           </div>
 
           {ap.status==="aberta"&&(<>
-            <button onClick={()=>{setApSel(ap);setATre([{velocidade:"",bicos:bicosPadrao(ap.fazenda),volume:""}]);setTela("apontamento");}} style={{...btnP(),marginBottom:8,background:cor}}>+ Novo apontamento</button>
+            <button onClick={()=>{setATre([{velocidade:"",bicos:bicosPadrao(ap.fazenda),volume:""}]);irPara("apontamento",{apSel:ap});}} style={{...btnP(),marginBottom:8,background:cor}}>+ Novo apontamento</button>
             <button onClick={()=>fecharAp(ap.id)} style={{...btnG(),width:"100%",justifyContent:"center",borderColor:`${C.ok}44`,color:C.ok}}><ILock/> Marcar como concluído</button>
             {ap.apontamentos.filter(r=>!r.cancelado).length===0&&(
               <button onClick={()=>{setApExcluirId(ap.id);setSenhaExcluirIn("");setSenhaExcluirErr(false);setShowExcluirAp(true);}}
@@ -1914,7 +2003,7 @@ export default function App() {
     return (
       <div style={AppStyle}>
         <Hdr titulo="Configurações" sub={secao==="menu"?"Cadastros e parâmetros":menuItens.find(m=>m.id===secao)?.label||""}
-          onBack={()=>{if(secao==="menu") setTela("entrada"); else setSecao("menu");}}/>
+          onBack={()=>{if(secao==="menu") voltarParaInicio(); else setSecao("menu");}}/>
         <div style={{padding:12}}>
 
           {/* Seletor de fazenda — apenas nas seções de cadastro por fazenda */}
