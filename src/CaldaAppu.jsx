@@ -518,23 +518,6 @@ export default function App() {
     setTela("apontamento");
   };
 
-  // Atualiza ve_consolidado de TODOS os apontamentos-irmãos de uma aplicação
-  // (não só o que acabou de ser criado/editado/cancelado) — sem isso, cada
-  // apontamento guarda o "esperado" de quando foi salvo por último, ficando
-  // desatualizado assim que outro apontamento da mesma aplicação muda o
-  // cálculo consolidado (bug real encontrado: view usava o pior valor
-  // desatualizado entre os irmãos, inflando o desvio mostrado fora do app).
-  const sincronizarVeConsolidado = async (ap, veMap, idsExcluir=[]) => {
-    const validos = ap.apontamentos.filter(r=>!r.cancelado && !idsExcluir.includes(r.id));
-    try {
-      await Promise.all(validos.flatMap(r=>
-        ap.talhoes.map(cod=>
-          sbPatch("apontamento_talhao_volume", `id_apontamento=eq.${r.id}&cod_talhao=eq.${cod}`, {ve_consolidado:veMap[cod]||0})
-        )
-      ));
-    } catch(e){ console.error(e); }
-  };
-
   const salvarApt = async () => {
     const ap=aplicacoes.find(x=>x.id===apSel.id);
     const volTotal=aTre.reduce((s,t)=>s+fv(t.volume),0);
@@ -552,25 +535,15 @@ export default function App() {
       await Promise.all(aTre.map((t,i)=>sbPost("trechos",{id_apontamento:apId,velocidade:fv(t.velocidade),bicos:fv(t.bicos),volume:fv(t.volume),ordem:i+1})));
       const veMap=calcVEconsol([...todosTrechos(ap),...aTre],tals);
       await Promise.all(ap.talhoes.map(cod=>sbPost("apontamento_talhao_volume",{id_apontamento:apId,cod_talhao:cod,vol_rateado:novoR.volRateado[cod]||0,ve_consolidado:veMap[cod]||0})));
-      await sincronizarVeConsolidado(ap, veMap);
     } catch(e){console.error(e);}
   };
 
   const cancelarApontamento = async () => {
     if(!apontCancelar) return;
     const apId=apontCancelar.apId; const rId=apontCancelar.rId;
-    const ap=aplicacoes.find(x=>x.id===apId);
-    setAplicacoes(p=>p.map(x=>x.id!==apId?x:{...x,apontamentos:x.apontamentos.map(r=>r.id!==rId?r:{...r,cancelado:true})}));
+    setAplicacoes(p=>p.map(ap=>ap.id!==apId?ap:{...ap,apontamentos:ap.apontamentos.map(r=>r.id!==rId?r:{...r,cancelado:true})}));
     setShowCancelar(false); setMotivoCancelamento(""); setApontCancelar(null);
-    try {
-      await sbPatch("apontamentos",`id=eq.${rId}`,{cancelado:true,motivo_cancelamento:motivoCancelamento});
-      if(ap){
-        const tals=getTalhoesAp(ap);
-        const trechosRestantes=ap.apontamentos.filter(r=>r.id!==rId&&!r.cancelado).flatMap(r=>r.trechos);
-        const veMap=trechosRestantes.length?calcVEconsol(trechosRestantes,tals):{};
-        await sincronizarVeConsolidado(ap, veMap, [rId]);
-      }
-    }
+    try { await sbPatch("apontamentos",`id=eq.${rId}`,{cancelado:true,motivo_cancelamento:motivoCancelamento}); }
     catch(e){console.error(e);}
   };
 
@@ -659,7 +632,6 @@ export default function App() {
           id_apontamento:rId, cod_talhao:cod,
           vol_rateado:novoVolRateado[cod]||0, ve_consolidado:veMap[cod]||0,
         })));
-        await sincronizarVeConsolidado(ap, veMap, [rId]);
       }
     } catch(e){
       console.error(e);
