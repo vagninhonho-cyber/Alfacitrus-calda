@@ -1223,7 +1223,7 @@ export default function App() {
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
                   <div>
                     <div style={{fontSize:17,fontWeight:900}}>Talhão {ap.talhoes.map(c=>getTal(c)?.quadra).join(" + ")}</div>
-                    <div style={{fontSize:9,color:C.txM}}>{ap.id} · {ap.dataCriacao}</div>
+                    <div style={{fontSize:9,color:C.txM}}>{ap.id} · {fmtDataBR(ultimoApontamento(ap)||ap.dataCriacao)}</div>
                   </div>
                   <div style={{textAlign:"right"}}>
                     <span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:7,background:ap.status==="aberta"?bgCorAp(corIdx):C.okBg,color:ap.status==="aberta"?corAp(corIdx):C.ok}}>
