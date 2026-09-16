@@ -44,8 +44,13 @@ const bicosPadrao = subf => (subf==="NSA"||subf==="FV"||subf==="SMA") ? "80" : (
 // Velocidades mais usadas na Fazenda São Pedro (FSP/FSF) — mostra como
 // botões de seleção rápida em vez de abrir o teclado direto, com opção
 // de digitar outro valor se nenhuma dessas servir.
-const VELOCIDADES_FSP = [2, 2.8, 3.7, 4.2];
+const VELOCIDADES_FSP = [2, 2.8, 3.7, 4.2, 5];
 const mostrarVelPreset = subf => subf==="FSP"||subf==="FSF";
+
+// Rastreia o X inicial do toque pro gesto de arrastar entre talhões — variável
+// de módulo simples (não hook), já que fica dentro de blocos condicionais por
+// tela e não pode violar a ordem de hooks do React.
+let touchStartX = 0;
 
 const sortTalhoes = arr => [...arr].sort((a,b)=>{
   const na=parseInt(a.quadra.replace(/\D/g,""))||0;
@@ -1674,9 +1679,27 @@ export default function App() {
   if(tela==="tal_detalhe"&&talSel) {
     const abs=apAbertasDeTal(talSel.cod);
     const hist=apsDeTal(talSel.cod).filter(a=>a.status==="fechada");
+    // Navegação por arrastar (swipe) entre os talhões da mesma subfazenda,
+    // na mesma ordem exibida na aba Talhões — arrasta pra esquerda avança,
+    // pra direita volta.
+    const subfTals=sortTalhoes(talhoes.filter(t=>t.id_subfazenda===subf));
+    const idxAtual=subfTals.findIndex(t=>t.cod===talSel.cod);
+    const irParaTalhaoVizinho=dir=>{
+      const novoIdx=idxAtual+dir;
+      if(novoIdx>=0&&novoIdx<subfTals.length) setTalSel(subfTals[novoIdx]);
+    };
     return (
-      <div style={AppStyle}>
-        <Hdr titulo={`Talhão ${talSel.quadra}`} sub={`${talSel.variedade} · ${parseFloat(talSel.area).toFixed(2)} ha · ${talSel.plantas.toLocaleString("pt-BR")} pl`} onBack={()=>voltarNav("main")}/>
+      <div style={AppStyle}
+        onTouchStart={e=>{touchStartX=e.touches[0].clientX;}}
+        onTouchEnd={e=>{
+          const deltaX=e.changedTouches[0].clientX-touchStartX;
+          if(Math.abs(deltaX)>60){
+            if(deltaX<0) irParaTalhaoVizinho(1);
+            else irParaTalhaoVizinho(-1);
+          }
+        }}>
+        <Hdr titulo={`Talhão ${talSel.quadra}`} sub={`${talSel.variedade} · ${parseFloat(talSel.area).toFixed(2)} ha · ${talSel.plantas.toLocaleString("pt-BR")} pl`} onBack={()=>voltarNav("main")}
+          extra={idxAtual>=0&&<span style={{fontSize:10,color:C.txM,fontWeight:700}}>{idxAtual+1} / {subfTals.length}</span>}/>
         <div style={{padding:12}}>
           {abs.map((ap,i)=>{
             const pct=pctCobertura(ap);
