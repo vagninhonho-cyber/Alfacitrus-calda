@@ -44,7 +44,7 @@ const bicosPadrao = subf => (subf==="NSA"||subf==="FV"||subf==="SMA") ? "80" : (
 // Velocidades mais usadas na Fazenda São Pedro (FSP/FSF) — mostra como
 // botões de seleção rápida em vez de abrir o teclado direto, com opção
 // de digitar outro valor se nenhuma dessas servir.
-const VELOCIDADES_FSP = [2, 2.8, 3.7, 4.2, 5];
+const VELOCIDADES_FSP = [2, 2.8, 3.7, 4.2, 6];
 const mostrarVelPreset = subf => subf==="FSP"||subf==="FSF";
 
 // Rastreia o X inicial do toque pro gesto de arrastar entre talhões — variável
