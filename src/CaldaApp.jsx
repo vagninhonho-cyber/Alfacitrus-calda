@@ -13,6 +13,22 @@ const sbGet  = async p => { const r=await fetch(`${SUPABASE_URL}/rest/v1/${p}`,{
 const sbPost = async (t,b) => { const r=await fetch(`${SUPABASE_URL}/rest/v1/${t}`,{method:"POST",headers:{...H,"Prefer":"return=representation"},body:JSON.stringify(b)}); if(!r.ok) throw new Error(await r.text()); return r.json(); };
 const sbPatch= async (t,w,b) => { const r=await fetch(`${SUPABASE_URL}/rest/v1/${t}?${w}`,{method:"PATCH",headers:{...H,"Prefer":"return=representation"},body:JSON.stringify(b)}); if(!r.ok) throw new Error(await r.text()); return r.json(); };
 const sbDelete= async (t,w) => { const r=await fetch(`${SUPABASE_URL}/rest/v1/${t}?${w}`,{method:"DELETE",headers:H}); if(!r.ok) throw new Error(await r.text()); };
+// Busca em LOTE por uma lista de valores (coluna IN (...)), em vez de uma
+// requisição por item — evita o problema de N requisições (uma por
+// apontamento) que estava inflando o uso de "Log Ingestion" do Supabase.
+// Quebra em pedaços de 150 ids por chamada pra não estourar o tamanho da URL
+// quando a lista for muito grande (fazenda com muitas aplicações/apontamentos).
+const sbGetIn = async (table, col, ids, selectExtra="*") => {
+  const uniq = [...new Set(ids)].filter(Boolean);
+  if(!uniq.length) return [];
+  const CHUNK=150;
+  const partes=[];
+  for(let i=0;i<uniq.length;i+=CHUNK) partes.push(uniq.slice(i,i+CHUNK));
+  const resultados = await Promise.all(
+    partes.map(p => sbGet(`${table}?select=${selectExtra}&${col}=in.(${p.join(",")})`))
+  );
+  return resultados.flat();
+};
 
 // ═══════════════════════════════════════════════════════════════════════
 // CÁLCULOS
@@ -44,7 +60,7 @@ const bicosPadrao = subf => (subf==="NSA"||subf==="FV"||subf==="SMA") ? "80" : (
 // Velocidades mais usadas na Fazenda São Pedro (FSP/FSF) — mostra como
 // botões de seleção rápida em vez de abrir o teclado direto, com opção
 // de digitar outro valor se nenhuma dessas servir.
-const VELOCIDADES_FSP = [2, 2.8, 3.7, 4.2, 6];
+const VELOCIDADES_FSP = [2, 2.8, 3.7, 4.2, 5];
 const mostrarVelPreset = subf => subf==="FSP"||subf==="FSF";
 
 // Rastreia o X inicial do toque pro gesto de arrastar entre talhões — variável
@@ -378,14 +394,41 @@ export default function App() {
         }
       } catch(e){}
 
-      // Aplicações
+      // Aplicações — carregamento em LOTE (4 consultas no total, não importa
+      // quantas aplicações/apontamentos existam). Antes disso aqui fazia
+      // 2 requisições por aplicação + 2 por apontamento (uma pra "trechos"
+      // e outra pra "apontamento_talhao_volume"), o que numa fazenda com
+      // algumas dezenas de aplicações virava várias centenas de chamadas
+      // HTTP TODA VEZ que a fazenda era aberta — e cada chamada é um log
+      // registrado pelo Supabase, o que estava consumindo a cota de
+      // "Log Ingestion" do plano gratuito muito mais rápido que o normal.
       const aps = await sbGet(`aplicacoes?select=*&id_subfazenda=in.(${subfIds.join(",")})&order=seq.desc`);
-      const apsCompl = await Promise.all(aps.map(async ap => {
-        const apT = await sbGet(`aplicacao_talhoes?select=cod_talhao&id_aplicacao=eq.${ap.id}`);
-        const apts = await sbGet(`apontamentos?select=*&id_aplicacao=eq.${ap.id}&cancelado=eq.false&order=criado_em`);
-        const aptsC = await Promise.all(apts.map(async apt => {
-          const tres = await sbGet(`trechos?select=*&id_apontamento=eq.${apt.id}&order=ordem`);
-          const vols = await sbGet(`apontamento_talhao_volume?select=*&id_apontamento=eq.${apt.id}`);
+      const apIds = aps.map(ap=>ap.id);
+      const [apTs, aptsAll] = await Promise.all([
+        sbGetIn("aplicacao_talhoes", "id_aplicacao", apIds, "id_aplicacao,cod_talhao"),
+        sbGetIn("apontamentos", "id_aplicacao", apIds, "*").then(r=>r.filter(a=>!a.cancelado)),
+      ]);
+      const aptIds = aptsAll.map(a=>a.id);
+      const [tresAll, volsAll] = await Promise.all([
+        sbGetIn("trechos", "id_apontamento", aptIds, "*"),
+        sbGetIn("apontamento_talhao_volume", "id_apontamento", aptIds, "*"),
+      ]);
+      // Agrupa tudo em memória (os dados já vieram todos, isso não gera
+      // nenhuma requisição adicional ao banco)
+      const talhoesPorAp = {};
+      apTs.forEach(t=>{ (talhoesPorAp[t.id_aplicacao]??=[]).push(t.cod_talhao); });
+      const trechosPorApt = {};
+      tresAll.sort((a,b)=>a.ordem-b.ordem).forEach(t=>{ (trechosPorApt[t.id_apontamento]??=[]).push(t); });
+      const volsPorApt = {};
+      volsAll.forEach(v=>{ (volsPorApt[v.id_apontamento]??=[]).push(v); });
+      const aptsPorAp = {};
+      aptsAll.sort((a,b)=>(a.criado_em||"").localeCompare(b.criado_em||"")).forEach(a=>{ (aptsPorAp[a.id_aplicacao]??=[]).push(a); });
+
+      const apsCompl = aps.map(ap => {
+        const apts = aptsPorAp[ap.id] || [];
+        const aptsC = apts.map(apt => {
+          const tres = trechosPorApt[apt.id] || [];
+          const vols = volsPorApt[apt.id] || [];
           const volRat={};
           vols.forEach(v=>{ volRat[v.cod_talhao]=parseFloat(v.vol_rateado); });
           const op=ops.find(o=>o.id===apt.id_operador);
@@ -397,14 +440,14 @@ export default function App() {
             velMedia:parseFloat(apt.vel_media)||0,bicosMedia:parseFloat(apt.bicos_media)||0,
             observacao:apt.observacao||"",cancelado:apt.cancelado,
           };
-        }));
+        });
         return {
           id:ap.id,seq:ap.seq,fazenda:ap.id_subfazenda,
-          talhoes:apT.map(t=>t.cod_talhao),
+          talhoes:talhoesPorAp[ap.id] || [],
           status:ap.status,dataCriacao:ap.data_criacao,dataFechamento:ap.data_fechamento,
           apontamentos:aptsC,
         };
-      }));
+      });
       setAplicacoes(apsCompl);
       // nextSeq deve usar o maior seq GLOBAL do banco (não só da subfazenda),
       // senão pode gerar IDs duplicados que já existem em outras fazendas
